@@ -29,7 +29,7 @@
     "typescript",
     "javascript"
   ],
-  "author": "",
+  "author": "Bliss Jaspis",
   "license": "MIT",
   "packageManager": "pnpm@10.12.1",
   "devDependencies": {
