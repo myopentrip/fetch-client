@@ -1,5 +1,5 @@
 {
-  "name": "fetch-client",
+  "name": "@myopentrip/fetch-client",
   "version": "2.0.0",
   "description": "A reusable fetch client for modern JavaScript/TypeScript applications",
   "main": "dist/index.js",
