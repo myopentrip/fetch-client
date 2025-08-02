@@ -4,13 +4,17 @@ A reusable, TypeScript-first HTTP client built on top of the native Fetch API. D
 
 ## Features
 
-- 🔥 TypeScript support with full type safety
-- 🔄 Automatic retry mechanism with exponential backoff
-- ⏱️ Request timeout handling
-- 🔧 Configurable base URL and default headers
-- 📦 Tree-shakeable ESM and CommonJS builds
-- 🎯 Support for all HTTP methods (GET, POST, PUT, DELETE, PATCH)
-- 🛠️ Built on native Fetch API (works in Node.js 18+ and all modern browsers)
+- 🔥 **TypeScript-first** with full type safety
+- ⏹️ **Request Cancellation** with AbortController support
+- 🔄 **Smart Retry Logic** with exponential backoff and jitter
+- 🎯 **Interceptor System** for requests, responses, and errors
+- ⏱️ **Request timeout** handling
+- 🔧 **Configurable** base URL and default headers
+- 📦 **Tree-shakeable** ESM and CommonJS builds
+- 🎯 **All HTTP methods** (GET, POST, PUT, DELETE, PATCH)
+- 🛠️ **Native Fetch API** (works in Node.js 18+ and all modern browsers)
+- 🐛 **Debug mode** with comprehensive logging
+- 🔐 **Built-in auth helpers** and common interceptors
 
 ## Installation
 
@@ -84,8 +88,104 @@ const client = new FetchClient({
     'X-Custom-Header': 'value'
   },
   retries: 3,                          // Number of retry attempts (default: 0)
-  retryDelay: 1000                     // Delay between retries in ms (default: 1000)
+  retryDelay: 1000,                    // Base delay between retries in ms (default: 1000)
+  enableInterceptors: true,            // Enable interceptor system (default: true)
+  debug: true                          // Enable debug logging (default: false)
 });
+```
+
+### Advanced Retry Configuration
+
+```typescript
+client.updateRetryConfig({
+  maxRetries: 3,
+  baseDelay: 1000,         // Starting delay
+  maxDelay: 30000,         // Maximum delay cap
+  backoffFactor: 2,        // Exponential backoff multiplier
+  jitter: true,            // Add randomness to prevent thundering herd
+  retryCondition: (error, attempt) => {
+    // Custom retry logic - retry on 5xx errors, not 4xx
+    return !error.status || (error.status >= 500 && error.status < 600);
+  }
+});
+```
+
+### Request Cancellation
+
+```typescript
+// Cancel requests using AbortController
+const controller = new AbortController();
+
+// Start the request
+const requestPromise = client.get('/users', {
+  signal: controller.signal
+});
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+try {
+  const response = await requestPromise;
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request was cancelled');
+  }
+}
+```
+
+### Interceptor System
+
+```typescript
+// Request interceptors (modify outgoing requests)
+const removeAuthInterceptor = client.addRequestInterceptor(async (config) => {
+  const token = await getAuthToken();
+  config.headers = {
+    ...config.headers,
+    'Authorization': `Bearer ${token}`
+  };
+  return config;
+});
+
+// Response interceptors (modify incoming responses)
+const removeResponseInterceptor = client.addResponseInterceptor((response) => {
+  console.log(`Response received: ${response.status}`);
+  return response;
+});
+
+// Error interceptors (handle/transform errors)
+const removeErrorInterceptor = client.addErrorInterceptor((error) => {
+  console.error('Request failed:', error.message);
+  // Transform error, add context, send to monitoring, etc.
+  return error;
+});
+
+// Remove interceptors when no longer needed
+removeAuthInterceptor();
+removeResponseInterceptor();
+removeErrorInterceptor();
+```
+
+### Built-in Interceptor Helpers
+
+```typescript
+import { 
+  createAuthInterceptor, 
+  createLoggingInterceptor,
+  createTimingInterceptor 
+} from 'fetch-client';
+
+// Automatic auth token injection
+client.addRequestInterceptor(
+  createAuthInterceptor(() => localStorage.getItem('token'))
+);
+
+// Request/response logging
+client.addRequestInterceptor(createLoggingInterceptor(true));
+
+// Performance timing
+const timing = createTimingInterceptor();
+client.addRequestInterceptor(timing.request);
+client.addResponseInterceptor(timing.response);
 ```
 
 ### Per-Request Configuration
@@ -95,6 +195,7 @@ const client = new FetchClient({
 const response = await client.get('/users', {
   timeout: 5000,
   retries: 2,
+  signal: controller.signal,  // Request cancellation
   headers: {
     'X-Custom-Header': 'override-value'
   }
