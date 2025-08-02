@@ -8,6 +8,7 @@ A reusable, TypeScript-first HTTP client built on top of the native Fetch API. D
 - ⏹️ **Request Cancellation** with AbortController support
 - 🔄 **Smart Retry Logic** with exponential backoff and jitter
 - 🎯 **Interceptor System** for requests, responses, and errors
+- 📁 **File Upload Support** with progress tracking and validation
 - ⏱️ **Request timeout** handling
 - 🔧 **Configurable** base URL and default headers
 - 📦 **Tree-shakeable** ESM and CommonJS builds
@@ -19,13 +20,13 @@ A reusable, TypeScript-first HTTP client built on top of the native Fetch API. D
 ## Installation
 
 ```bash
-pnpm add fetch-client
+pnpm add @myopentrip/fetch-client
 ```
 
 ## Quick Start
 
 ```typescript
-import { FetchClient } from 'fetch-client';
+import { FetchClient } from '@myopentrip/fetch-client';
 
 // Create a client instance
 const client = new FetchClient({
@@ -46,7 +47,7 @@ console.log(response.data);
 ### Basic Usage
 
 ```typescript
-import { FetchClient, createFetchClient } from 'fetch-client';
+import { FetchClient, createFetchClient } from '@myopentrip/fetch-client';
 
 // Option 1: Create with constructor
 const client = new FetchClient({
@@ -172,7 +173,7 @@ import {
   createAuthInterceptor, 
   createLoggingInterceptor,
   createTimingInterceptor 
-} from 'fetch-client';
+} from '@myopentrip/fetch-client';
 
 // Automatic auth token injection
 client.addRequestInterceptor(
@@ -186,6 +187,73 @@ client.addRequestInterceptor(createLoggingInterceptor(true));
 const timing = createTimingInterceptor();
 client.addRequestInterceptor(timing.request);
 client.addResponseInterceptor(timing.response);
+```
+
+### File Upload Support
+
+```typescript
+import { 
+  FetchClient, 
+  createFileUploadData, 
+  validateFile, 
+  formatFileSize,
+  formatUploadSpeed 
+} from '@myopentrip/fetch-client';
+
+const client = new FetchClient({
+  baseURL: 'https://api.example.com'
+});
+
+// Simple file upload
+const file = document.getElementById('file-input').files[0];
+const response = await client.uploadFile('/api/upload', {
+  file,
+  fieldName: 'document',
+  additionalFields: {
+    description: 'User upload',
+    category: 'documents'
+  }
+});
+
+// Multiple files upload
+const files = Array.from(document.getElementById('files-input').files);
+await client.uploadFiles('/api/upload-multiple', files, {
+  fieldName: 'files[]'
+});
+
+// File upload with progress tracking
+await client.uploadFile('/api/upload', { file }, {
+  onProgress: (progress) => {
+    console.log(`${progress.percentage}% complete`);
+    console.log(`Speed: ${formatUploadSpeed(progress.speed)}`);
+  },
+  onUploadStart: () => console.log('Upload started'),
+  onUploadComplete: () => console.log('Upload finished'),
+});
+
+// Complex form data with files and other fields
+await client.uploadFormData('/api/profile', {
+  // Files
+  avatar: avatarFile,
+  documents: [doc1, doc2],
+  
+  // Other fields
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30
+});
+
+// File validation before upload
+const validation = validateFile(file, {
+  maxSize: 10 * 1024 * 1024, // 10MB
+  allowedTypes: ['image/jpeg', 'image/png'],
+  allowedExtensions: ['jpg', 'jpeg', 'png']
+});
+
+if (!validation.valid) {
+  console.error(validation.error);
+  return;
+}
 ```
 
 ### Per-Request Configuration
@@ -205,7 +273,7 @@ const response = await client.get('/users', {
 ### Error Handling
 
 ```typescript
-import type { FetchError } from 'fetch-client';
+import type { FetchError } from '@myopentrip/fetch-client';
 
 try {
   const response = await client.get('/users');
@@ -248,7 +316,7 @@ Perfect for Next.js API routes and client-side data fetching:
 
 ```typescript
 // lib/api-client.ts
-import { createFetchClient } from 'fetch-client';
+import { createFetchClient } from '@myopentrip/fetch-client';
 
 export const apiClient = createFetchClient({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',

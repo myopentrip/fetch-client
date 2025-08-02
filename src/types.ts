@@ -48,3 +48,31 @@ export interface RetryConfig {
     jitter: boolean;
     retryCondition?: (error: FetchError, attempt: number) => boolean;
 }
+
+// File Upload Types
+export interface UploadProgressEvent {
+    loaded: number;
+    total: number;
+    percentage: number;
+    speed?: number; // bytes per second
+    estimatedTime?: number; // estimated time remaining in seconds
+}
+
+export interface FileUploadConfig extends Omit<RequestConfig, 'body'> {
+    onProgress?: (progress: UploadProgressEvent) => void;
+    onUploadStart?: () => void;
+    onUploadComplete?: () => void;
+    onUploadError?: (error: Error) => void;
+    chunkSize?: number; // for future chunked upload support
+}
+
+export interface FileUploadData {
+    file: File | File[];
+    fieldName?: string;
+    additionalFields?: Record<string, string | number | boolean>;
+    fileName?: string; // override filename
+}
+
+export interface MultipartFormData {
+    [key: string]: string | number | boolean | File | File[];
+}
