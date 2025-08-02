@@ -1,5 +1,5 @@
 // Example usage of the fetch-client package
-import { FetchClient, createFetchClient } from './src/index';
+import { FetchClient, createFetchClient } from '../src/index';
 
 async function examples() {
   // Example 1: Basic usage with constructor
