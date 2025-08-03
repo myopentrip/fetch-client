@@ -257,7 +257,9 @@ export class FetchClient {
         let lastError: FetchError | undefined;
         const startTime = Date.now();
 
-        this.log('Starting request', { url, method: fetchConfig.method, headers: mergedHeaders });
+        if (this.config.debug) {
+            this.log('Starting request', { url, method: fetchConfig.method, headers: mergedHeaders });
+        }
 
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
@@ -313,13 +315,15 @@ export class FetchClient {
                     headers: response.headers,
                 };
 
-                const duration = Date.now() - startTime;
-                this.log('Request completed successfully', {
-                    url,
-                    status: response.status,
-                    duration: `${duration}ms`,
-                    attempt: attempt + 1
-                });
+                if (this.config.debug) {
+                    const duration = Date.now() - startTime;
+                    this.log('Request completed successfully', {
+                        url,
+                        status: response.status,
+                        duration: `${duration}ms`,
+                        attempt: attempt + 1
+                    });
+                }
 
                 // Apply response interceptors
                 return await this.applyResponseInterceptors(fetchResponse);
@@ -332,15 +336,19 @@ export class FetchClient {
                     this.retryConfig.retryCondition &&
                     this.retryConfig.retryCondition(fetchError, attempt);
 
-                this.log(`Request failed (attempt ${attempt + 1}/${retries + 1})`, {
-                    url,
-                    error: fetchError.message,
-                    shouldRetry
-                });
+                if (this.config.debug) {
+                    this.log(`Request failed (attempt ${attempt + 1}/${retries + 1})`, {
+                        url,
+                        error: fetchError.message,
+                        shouldRetry
+                    });
+                }
 
                 if (shouldRetry) {
                     const delay = this.calculateRetryDelay(attempt);
-                    this.log(`Retrying in ${delay}ms`, { attempt: attempt + 1, delay });
+                    if (this.config.debug) {
+                        this.log(`Retrying in ${delay}ms`, { attempt: attempt + 1, delay });
+                    }
                     await this.sleep(delay);
                 } else {
                     lastError = fetchError;
@@ -608,18 +616,24 @@ export class FetchClient {
 
             // Set up event handlers
             xhr.upload.addEventListener('loadstart', () => {
-                this.log('Upload started');
+                if (this.config.debug) {
+                    this.log('Upload started');
+                }
                 onUploadStart?.();
             });
 
             xhr.upload.addEventListener('load', () => {
-                this.log('Upload completed');
+                if (this.config.debug) {
+                    this.log('Upload completed');
+                }
                 onUploadComplete?.();
             });
 
             xhr.upload.addEventListener('error', () => {
                 const error = new Error('Upload failed');
-                this.log('Upload error', error);
+                if (this.config.debug) {
+                    this.log('Upload error', error);
+                }
                 onUploadError?.(error);
                 reject(error);
             });
