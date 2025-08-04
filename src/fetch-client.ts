@@ -7,26 +7,29 @@ import type {
     RequestInterceptor,
     ResponseInterceptor,
     ErrorInterceptor,
-    Interceptors,
     RetryConfig,
     FileUploadConfig,
     FileUploadData,
     MultipartFormData,
-    UploadProgressEvent,
     AuthConfig,
     AuthTokens,
     AuthState,
     LoginCredentials
 } from './types';
-import { createCookieStorage } from './utils/cookies';
+
+import { AuthManager } from './managers/auth-manager';
+import { UploadManager } from './managers/upload-manager';
+import { InterceptorManager } from './managers/interceptor-manager';
+import { RequestExecutor } from './managers/request-executor';
+import { RetryManager } from './managers/retry-manager';
 
 export class FetchClient {
     private config: Required<Omit<FetchClientConfig, 'auth'>> & { auth?: AuthConfig };
-    private interceptors: Interceptors;
-    private retryConfig: RetryConfig;
-    private authConfig: AuthConfig | null;
-    private authState: AuthState;
-    private refreshPromise: Promise<AuthTokens> | null = null;
+    private authManager: AuthManager | null = null;
+    private uploadManager: UploadManager;
+    private interceptorManager: InterceptorManager;
+    private requestExecutor: RequestExecutor;
+    private retryManager: RetryManager;
 
     constructor(config: FetchClientConfig = {}) {
         this.config = {
@@ -43,13 +46,26 @@ export class FetchClient {
             auth: config.auth,
         };
 
-        this.interceptors = {
-            request: [],
-            response: [],
-            error: [],
-        };
+        // Initialize managers
+        this.interceptorManager = new InterceptorManager(
+            this.config.enableInterceptors,
+            this.config.debug
+        );
 
-        this.retryConfig = {
+        this.requestExecutor = new RequestExecutor(
+            this.config.baseURL,
+            this.config.timeout,
+            this.config.headers,
+            this.config.debug
+        );
+
+        this.uploadManager = new UploadManager(
+            this.config.debug,
+            this.config.timeout,
+            this.config.headers
+        );
+
+        const retryConfig = {
             maxRetries: this.config.retries,
             baseDelay: this.config.retryDelay,
             maxDelay: 30000, // 30 seconds max
@@ -60,102 +76,53 @@ export class FetchClient {
                 return !error.status || (error.status >= 500 && error.status < 600);
             },
         };
+        this.retryManager = new RetryManager(retryConfig, this.config.debug);
 
-        // Initialize auth
-        this.authConfig = config.auth || null;
-        this.authState = {
-            isAuthenticated: false,
-            tokens: null,
-            isRefreshing: false,
-        };
-
-        // Set up auth if configured
-        if (this.authConfig) {
+        // Initialize auth if configured
+        if (this.config.auth) {
             this.initializeAuth();
         }
     }
 
-    // Interceptor management methods
+    // Interceptor management methods (delegated)
     addRequestInterceptor(interceptor: RequestInterceptor): () => void {
-        this.interceptors.request.push(interceptor);
-        return () => {
-            const index = this.interceptors.request.indexOf(interceptor);
-            if (index > -1) {
-                this.interceptors.request.splice(index, 1);
-            }
-        };
+        return this.interceptorManager.addRequestInterceptor(interceptor);
     }
 
     addResponseInterceptor(interceptor: ResponseInterceptor): () => void {
-        this.interceptors.response.push(interceptor);
-        return () => {
-            const index = this.interceptors.response.indexOf(interceptor);
-            if (index > -1) {
-                this.interceptors.response.splice(index, 1);
-            }
-        };
+        return this.interceptorManager.addResponseInterceptor(interceptor);
     }
 
     addErrorInterceptor(interceptor: ErrorInterceptor): () => void {
-        this.interceptors.error.push(interceptor);
-        return () => {
-            const index = this.interceptors.error.indexOf(interceptor);
-            if (index > -1) {
-                this.interceptors.error.splice(index, 1);
-            }
-        };
+        return this.interceptorManager.addErrorInterceptor(interceptor);
     }
 
     updateRetryConfig(config: Partial<RetryConfig>): void {
-        this.retryConfig = { ...this.retryConfig, ...config };
+        this.retryManager.updateConfig(config);
     }
 
-    // Authentication Methods
-
-    /**
-     * Initialize authentication system
-     */
-    private async initializeAuth(): Promise<void> {
-        if (!this.authConfig) return;
-
-        // Load existing tokens from storage
-        await this.loadTokensFromStorage();
-
-        // Add auth interceptor if tokens exist
-        if (this.authState.tokens) {
-            this.addAuthInterceptor();
-        }
-
-        // Add response interceptor for handling 401s
-        this.addResponseInterceptor(async (response) => {
-            if (response.status === 401 && this.authConfig?.autoRefresh !== false) {
-                await this.handleUnauthorized();
-            }
-            return response;
-        });
-    }
+    // Authentication Methods (delegated)
 
     /**
      * Login with credentials
      */
     async login<T = any>(credentials: LoginCredentials): Promise<FetchResponse<T>> {
-        if (!this.authConfig?.loginUrl) {
+        if (!this.authManager) {
+            throw new Error('Authentication not configured');
+        }
+
+        if (!this.config.auth?.loginUrl) {
             throw new Error('Login URL not configured');
         }
 
         try {
-            const response = await this.post<T>(this.authConfig.loginUrl, credentials);
-            
-            // Extract tokens from response
-            const tokens = this.extractTokensFromResponse(response);
-            if (tokens) {
-                await this.setTokens(tokens);
-                this.authConfig.onLoginSuccess?.(tokens);
-            }
+            const response = await this.post<T>(this.config.auth.loginUrl, credentials);
+
+            await this.authManager.processLoginResponse(response);
 
             return response;
         } catch (error) {
-            this.authConfig.onAuthError?.(error as FetchError);
+            this.authManager.handleLoginError(error as FetchError);
             throw error;
         }
     }
@@ -164,17 +131,21 @@ export class FetchClient {
      * Logout user
      */
     async logout(): Promise<void> {
+        if (!this.authManager) {
+            throw new Error('Authentication not configured');
+        }
+
         try {
             // Call logout endpoint if configured
-            if (this.authConfig?.logoutUrl) {
-                await this.post(this.authConfig.logoutUrl);
+            if (this.config.auth?.logoutUrl) {
+                await this.post(this.config.auth.logoutUrl);
             }
         } catch (error) {
             // Continue with logout even if endpoint fails
             this.log('Logout endpoint failed', error);
         } finally {
-            await this.clearTokens();
-            this.authConfig?.onLogout?.();
+            await this.authManager.clearTokens();
+            this.authManager.handleLogout();
         }
     }
 
@@ -182,308 +153,241 @@ export class FetchClient {
      * Set authentication tokens
      */
     async setTokens(tokens: AuthTokens): Promise<void> {
-        // Calculate expiry timestamp if needed
-        if (tokens.expiresIn && !tokens.expiresAt) {
-            tokens.expiresAt = Date.now() + (tokens.expiresIn * 1000);
+        if (!this.authManager) {
+            throw new Error('Authentication not configured');
         }
 
-        this.authState.tokens = tokens;
-        this.authState.isAuthenticated = true;
-        
-        await this.saveTokensToStorage(tokens);
+        await this.authManager.setTokens(tokens);
         this.addAuthInterceptor();
-        
-        this.log('Tokens set successfully');
     }
 
     /**
      * Get current tokens
      */
     getTokens(): AuthTokens | null {
-        return this.authState.tokens;
+        return this.authManager?.getTokens() || null;
     }
 
     /**
      * Clear authentication tokens
      */
     async clearTokens(): Promise<void> {
-        this.authState.tokens = null;
-        this.authState.isAuthenticated = false;
-        this.authState.user = undefined;
-        
-        await this.removeTokensFromStorage();
+        if (!this.authManager) {
+            throw new Error('Authentication not configured');
+        }
+
+        await this.authManager.clearTokens();
         this.removeAuthInterceptor();
-        
-        this.log('Tokens cleared');
     }
 
     /**
      * Check if user is authenticated
      */
     isAuthenticated(): boolean {
-        return this.authState.isAuthenticated && !!this.authState.tokens;
+        return this.authManager?.isAuthenticated() || false;
     }
 
     /**
      * Check if token is expired or will expire soon
      */
     isTokenExpired(threshold?: number): boolean {
-        const tokens = this.authState.tokens;
-        if (!tokens || !tokens.expiresAt) return false;
-
-        const now = Date.now();
-        const refreshThreshold = (threshold || this.authConfig?.refreshThreshold || 300) * 1000;
-        
-        return tokens.expiresAt <= (now + refreshThreshold);
+        return this.authManager?.isTokenExpired(threshold) || false;
     }
 
     /**
      * Refresh authentication tokens
      */
     async refreshTokens(): Promise<AuthTokens> {
-        if (!this.authConfig?.tokenRefreshUrl) {
-            throw new Error('Token refresh URL not configured');
+        if (!this.authManager) {
+            throw new Error('Authentication not configured');
         }
 
-        if (this.refreshPromise) {
-            return this.refreshPromise;
-        }
-
-        this.refreshPromise = this.performTokenRefresh();
-        
-        try {
-            const tokens = await this.refreshPromise;
-            this.refreshPromise = null;
-            return tokens;
-        } catch (error) {
-            this.refreshPromise = null;
-            throw error;
-        }
+        return this.authManager.refreshTokens(this.createRequestFunctionForAuth());
     }
 
     /**
      * Get auth state
      */
     getAuthState(): AuthState {
-        return { ...this.authState };
+        return this.authManager?.getAuthState() || {
+            isAuthenticated: false,
+            tokens: null,
+            isRefreshing: false,
+        };
     }
 
     /**
      * Set user information
      */
     setUser(user: any): void {
-        this.authState.user = user;
+        this.authManager?.setUser(user);
     }
 
     /**
      * Get current user
      */
     getUser(): any {
-        return this.authState.user;
+        return this.authManager?.getUser();
     }
 
-    // Private auth methods
+    // HTTP Methods (delegated with interceptors and retry)
 
-    private async performTokenRefresh(): Promise<AuthTokens> {
-        const currentTokens = this.authState.tokens;
-        if (!currentTokens?.refreshToken) {
-            throw new Error('No refresh token available');
-        }
-
-        this.authState.isRefreshing = true;
-        
-        try {
-            const response = await this.post(this.authConfig!.tokenRefreshUrl!, {
-                refreshToken: currentTokens.refreshToken
+    async request<T = unknown>(
+        method: HttpMethod,
+        path: string,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.retryManager.executeWithRetry(async () => {
+            // Apply request interceptors
+            const interceptedConfig = await this.interceptorManager.applyRequestInterceptors({
+                ...config,
+                method,
             });
 
-            const newTokens = this.extractTokensFromResponse(response);
-            if (!newTokens) {
-                throw new Error('Failed to extract tokens from refresh response');
-            }
+            // Execute request
+            const url = this.createURL(path);
+            const response = await this.requestExecutor.executeRequest<T>(url, interceptedConfig);
 
-            await this.setTokens(newTokens);
-            this.authState.lastRefresh = Date.now();
-            this.authConfig?.onTokenRefresh?.(newTokens);
-            
-            this.log('Tokens refreshed successfully');
-            return newTokens;
-        } catch (error) {
-            this.log('Token refresh failed', error);
-            this.authConfig?.onTokenExpired?.();
-            await this.clearTokens();
-            throw error;
-        } finally {
-            this.authState.isRefreshing = false;
+            // Apply response interceptors
+            return await this.interceptorManager.applyResponseInterceptors(response);
+        }, `${method} ${path}`);
+    }
+
+    async get<T = unknown>(
+        path: string,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.request<T>('GET', path, config);
+    }
+
+    async post<T = unknown>(
+        path: string,
+        data?: unknown,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.request<T>('POST', path, {
+            ...config,
+            body: this.prepareRequestBody(data),
+            headers: this.prepareRequestHeaders(data, config.headers),
+        });
+    }
+
+    async put<T = unknown>(
+        path: string,
+        data?: unknown,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.request<T>('PUT', path, {
+            ...config,
+            body: this.prepareRequestBody(data),
+            headers: this.prepareRequestHeaders(data, config.headers),
+        });
+    }
+
+    async patch<T = unknown>(
+        path: string,
+        data?: unknown,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.request<T>('PATCH', path, {
+            ...config,
+            body: this.prepareRequestBody(data),
+            headers: this.prepareRequestHeaders(data, config.headers),
+        });
+    }
+
+    async delete<T = unknown>(
+        path: string,
+        config: RequestConfig = {}
+    ): Promise<FetchResponse<T>> {
+        return this.request<T>('DELETE', path, config);
+    }
+
+    // File Upload Methods (delegated)
+
+    /**
+     * Upload a single file or multiple files
+     */
+    async uploadFile<T = unknown>(
+        path: string,
+        fileData: FileUploadData,
+        config: FileUploadConfig = {}
+    ): Promise<FetchResponse<T>> {
+        const url = this.createURL(path);
+        return this.uploadManager.uploadFile<T>(url, fileData, config, this.createRequestFunctionForUpload<T>());
+    }
+
+    /**
+     * Upload multiple files
+     */
+    async uploadFiles<T = unknown>(
+        path: string,
+        files: File[],
+        config: FileUploadConfig & { fieldName?: string } = {}
+    ): Promise<FetchResponse<T>> {
+        const url = this.createURL(path);
+        return this.uploadManager.uploadFiles<T>(url, files, config, this.createRequestFunctionForUpload<T>());
+    }
+
+    /**
+     * Upload form data with files and other fields
+     */
+    async uploadFormData<T = unknown>(
+        path: string,
+        formData: FormData | MultipartFormData,
+        config: FileUploadConfig = {}
+    ): Promise<FetchResponse<T>> {
+        const url = this.createURL(path);
+        return this.uploadManager.uploadFormData<T>(url, formData, config, this.createRequestFunctionForUpload<T>());
+    }
+
+    // Private methods
+
+    private async initializeAuth(): Promise<void> {
+        if (!this.config.auth) return;
+
+        this.authManager = new AuthManager(this.config.auth, this.config.debug);
+        await this.authManager.initialize();
+
+        // Add auth interceptor if tokens exist
+        if (this.authManager.getTokens()) {
+            this.addAuthInterceptor();
         }
+
+        // Add response interceptor for handling 401s
+        this.addResponseInterceptor(async (response) => {
+            if (response.status === 401 && this.config.auth?.autoRefresh !== false) {
+                await this.handleUnauthorized();
+            }
+            return response;
+        });
     }
 
     private async handleUnauthorized(): Promise<void> {
-        if (this.authState.isRefreshing) return;
+        if (!this.authManager) return;
 
-        if (this.isTokenExpired() && this.authState.tokens?.refreshToken) {
-            try {
-                await this.refreshTokens();
-            } catch (error) {
-                // Token refresh failed, user needs to login again
-                this.authConfig?.onTokenExpired?.();
-            }
-        } else {
-            // No refresh token or not expired, just unauthorized
-            this.authConfig?.onTokenExpired?.();
-            await this.clearTokens();
-        }
-    }
-
-    private extractTokensFromResponse(response: FetchResponse): AuthTokens | null {
-        if (this.authConfig?.extractTokenFromResponse) {
-            return this.authConfig.extractTokenFromResponse(response.data);
-        }
-
-        // Default token extraction
-        const data = response.data as any;
-        if (data.accessToken || data.access_token) {
-            return {
-                accessToken: data.accessToken || data.access_token,
-                refreshToken: data.refreshToken || data.refresh_token,
-                expiresIn: data.expiresIn || data.expires_in,
-                tokenType: data.tokenType || data.token_type || 'Bearer'
-            };
-        }
-
-        return null;
+        await this.authManager.handleUnauthorized(this.createRequestFunctionForAuth());
     }
 
     private addAuthInterceptor(): void {
+        if (!this.authManager) return;
+
         // Remove existing auth interceptor if any
         this.removeAuthInterceptor();
 
         // Add new auth interceptor
-        this.authInterceptor = async (config: RequestConfig) => {
-            const tokens = this.authState.tokens;
-            if (tokens) {
-                const prefix = this.authConfig?.tokenPrefix || tokens.tokenType || 'Bearer';
-                config.headers = {
-                    ...config.headers,
-                    'Authorization': `${prefix} ${tokens.accessToken}`
-                };
-            }
-            return config;
-        };
-
+        this.authInterceptor = this.authManager.createAuthInterceptor();
         this.addRequestInterceptor(this.authInterceptor);
     }
 
     private removeAuthInterceptor(): void {
         if (this.authInterceptor) {
-            const index = this.interceptors.request.indexOf(this.authInterceptor);
-            if (index > -1) {
-                this.interceptors.request.splice(index, 1);
-            }
+            this.interceptorManager.removeRequestInterceptor(this.authInterceptor);
+            this.authInterceptor = null;
         }
     }
 
     private authInterceptor: RequestInterceptor | null = null;
-
-    private async loadTokensFromStorage(): Promise<void> {
-        try {
-            const storage = this.getStorage();
-            const tokenKey = this.authConfig?.tokenKey || 'authToken';
-            const refreshKey = this.authConfig?.refreshTokenKey || 'refreshToken';
-
-            const accessToken = await storage.getItem(tokenKey);
-            const refreshToken = await storage.getItem(refreshKey);
-            const expiresAt = await storage.getItem(`${tokenKey}_expiresAt`);
-
-            if (accessToken) {
-                const tokens: AuthTokens = {
-                    accessToken,
-                    refreshToken: refreshToken || undefined,
-                    expiresAt: expiresAt ? parseInt(expiresAt) : undefined
-                };
-
-                this.authState.tokens = tokens;
-                this.authState.isAuthenticated = true;
-                
-                this.log('Tokens loaded from storage');
-            }
-        } catch (error) {
-            this.log('Failed to load tokens from storage', error);
-        }
-    }
-
-    private async saveTokensToStorage(tokens: AuthTokens): Promise<void> {
-        try {
-            const storage = this.getStorage();
-            const tokenKey = this.authConfig?.tokenKey || 'authToken';
-            const refreshKey = this.authConfig?.refreshTokenKey || 'refreshToken';
-
-            await storage.setItem(tokenKey, tokens.accessToken);
-            
-            if (tokens.refreshToken) {
-                await storage.setItem(refreshKey, tokens.refreshToken);
-            }
-            
-            if (tokens.expiresAt) {
-                await storage.setItem(`${tokenKey}_expiresAt`, tokens.expiresAt.toString());
-            }
-
-            this.log('Tokens saved to storage');
-        } catch (error) {
-            this.log('Failed to save tokens to storage', error);
-        }
-    }
-
-    private async removeTokensFromStorage(): Promise<void> {
-        try {
-            const storage = this.getStorage();
-            const tokenKey = this.authConfig?.tokenKey || 'authToken';
-            const refreshKey = this.authConfig?.refreshTokenKey || 'refreshToken';
-
-            await storage.removeItem(tokenKey);
-            await storage.removeItem(refreshKey);
-            await storage.removeItem(`${tokenKey}_expiresAt`);
-
-            this.log('Tokens removed from storage');
-        } catch (error) {
-            this.log('Failed to remove tokens from storage', error);
-        }
-    }
-
-    private getStorage() {
-        const strategy = this.authConfig?.storage || 'localStorage';
-        
-        switch (strategy) {
-            case 'localStorage':
-                return {
-                    getItem: (key: string) => localStorage.getItem(key),
-                    setItem: (key: string, value: string) => localStorage.setItem(key, value),
-                    removeItem: (key: string) => localStorage.removeItem(key)
-                };
-            case 'sessionStorage':
-                return {
-                    getItem: (key: string) => sessionStorage.getItem(key),
-                    setItem: (key: string, value: string) => sessionStorage.setItem(key, value),
-                    removeItem: (key: string) => sessionStorage.removeItem(key)
-                };
-            case 'memory':
-                const memoryStorage = new Map<string, string>();
-                return {
-                    getItem: (key: string) => memoryStorage.get(key) || null,
-                    setItem: (key: string, value: string) => memoryStorage.set(key, value),
-                    removeItem: (key: string) => memoryStorage.delete(key)
-                };
-            case 'cookie':
-                return createCookieStorage(this.authConfig?.cookieOptions || {});
-            case 'custom':
-                if (!this.authConfig?.customStorage) {
-                    throw new Error('Custom storage implementation required');
-                }
-                return this.authConfig.customStorage;
-            default:
-                throw new Error(`Unsupported storage strategy: ${strategy}`);
-        }
-    }
 
     private createURL(path: string): string {
         if (path.startsWith('http://') || path.startsWith('https://')) {
@@ -498,105 +402,15 @@ export class FetchClient {
         return `${base}${cleanPath}`;
     }
 
-    private async withTimeout<T>(
-        promise: Promise<T>,
-        timeoutMs: number
-    ): Promise<T> {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => {
-                reject(new Error(`Request timeout after ${timeoutMs}ms`));
-            }, timeoutMs);
-        });
-
-        return Promise.race([promise, timeoutPromise]);
-    }
-
-    private async sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    private calculateRetryDelay(attempt: number): number {
-        let delay = this.retryConfig.baseDelay * Math.pow(this.retryConfig.backoffFactor, attempt);
-
-        if (this.retryConfig.jitter) {
-            // Add ±10% jitter to prevent thundering herd
-            const jitterRange = delay * 0.1;
-            const jitter = (Math.random() - 0.5) * 2 * jitterRange;
-            delay += jitter;
-        }
-
-        return Math.min(delay, this.retryConfig.maxDelay);
-    }
-
-    private async applyRequestInterceptors(config: RequestConfig): Promise<RequestConfig> {
-        if (!this.config.enableInterceptors) return config;
-
-        let modifiedConfig = { ...config };
-
-        for (const interceptor of this.interceptors.request) {
-            try {
-                modifiedConfig = await interceptor(modifiedConfig);
-            } catch (error) {
-                if (this.config.debug) {
-                    console.warn('Request interceptor failed:', error);
-                }
-                throw error;
-            }
-        }
-
-        return modifiedConfig;
-    }
-
-    private async applyResponseInterceptors<T>(response: FetchResponse<T>): Promise<FetchResponse<T>> {
-        if (!this.config.enableInterceptors) return response;
-
-        let modifiedResponse = { ...response };
-
-        for (const interceptor of this.interceptors.response) {
-            try {
-                modifiedResponse = await (interceptor as any)(modifiedResponse);
-            } catch (error) {
-                if (this.config.debug) {
-                    console.warn('Response interceptor failed:', error);
-                }
-                throw error;
-            }
-        }
-
-        return modifiedResponse;
-    }
-
-    private async applyErrorInterceptors(error: FetchError): Promise<FetchError> {
-        if (!this.config.enableInterceptors) return error;
-
-        let modifiedError = { ...error };
-
-        for (const interceptor of this.interceptors.error) {
-            try {
-                modifiedError = await interceptor(modifiedError);
-            } catch (interceptorError) {
-                if (this.config.debug) {
-                    console.warn('Error interceptor failed:', interceptorError);
-                }
-                return error; // Return original error if interceptor fails
-            }
-        }
-
-        return modifiedError;
-    }
-
-    private log(message: string, data?: any): void {
-        if (this.config.debug) {
-            console.log(`[FetchClient] ${message}`, data || '');
-        }
-    }
-
     private prepareRequestBody(data?: unknown): BodyInit | undefined {
         if (!data) return undefined;
 
         // Don't modify FormData or other BodyInit types
-        if (data instanceof FormData || data instanceof Blob || data instanceof ArrayBuffer ||
-            data instanceof URLSearchParams || typeof data === 'string') {
+        if (data instanceof FormData ||
+            data instanceof Blob ||
+            data instanceof ArrayBuffer ||
+            data instanceof URLSearchParams ||
+            typeof data === 'string') {
             return data as BodyInit;
         }
 
@@ -631,496 +445,24 @@ export class FetchClient {
         return headers;
     }
 
-    private async executeRequest<T>(
-        url: string,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        // Apply request interceptors
-        const interceptedConfig = await this.applyRequestInterceptors(config);
-
-        const {
-            timeout = this.config.timeout,
-            retries = this.retryConfig.maxRetries,
-            headers,
-            signal,
-            ...fetchConfig
-        } = interceptedConfig;
-
-        const mergedHeaders = {
-            ...this.config.headers,
-            ...headers,
+    private createRequestFunctionForAuth() {
+        return async (url: string, data: any): Promise<FetchResponse> => {
+            // Create a simple POST request for auth operations (without interceptors to avoid recursion)
+            return this.requestExecutor.post(url, data);
         };
+    }
 
-        let lastError: FetchError | undefined;
-        const startTime = Date.now();
+    private createRequestFunctionForUpload<T = unknown>() {
+        return async (url: string, config: RequestConfig): Promise<FetchResponse<T>> => {
+            // Create request for upload operations with interceptors applied
+            const interceptedConfig = await this.interceptorManager.applyRequestInterceptors(config);
+            return this.requestExecutor.executeRequest<T>(url, interceptedConfig);
+        };
+    }
 
+    private log(message: string, data?: any): void {
         if (this.config.debug) {
-            this.log('Starting request', { url, method: fetchConfig.method, headers: mergedHeaders });
+            console.log(`[FetchClient] ${message}`, data || '');
         }
-
-        for (let attempt = 0; attempt <= retries; attempt++) {
-            try {
-                // Create abort controller if no signal provided but timeout is set
-                const controller = signal ? undefined : new AbortController();
-                const requestSignal = signal || controller?.signal;
-
-                // Set up timeout for abort controller if we created one
-                let timeoutId: NodeJS.Timeout | undefined;
-                if (controller && timeout) {
-                    timeoutId = setTimeout(() => {
-                        controller.abort();
-                    }, timeout);
-                }
-
-                const response = await fetch(url, {
-                    ...fetchConfig,
-                    headers: mergedHeaders,
-                    signal: requestSignal,
-                });
-
-                // Clear timeout if request succeeded
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                }
-
-                if (!response.ok) {
-                    const error: FetchError = new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    error.status = response.status;
-                    error.statusText = response.statusText;
-                    error.response = response;
-                    throw error;
-                }
-
-                const contentType = response.headers.get('content-type');
-                let data: T;
-
-                if (contentType && contentType.includes('application/json')) {
-                    try {
-                        data = await response.json();
-                    } catch (parseError) {
-                        // If JSON parsing fails, fall back to text
-                        data = (await response.text()) as unknown as T;
-                    }
-                } else {
-                    data = (await response.text()) as unknown as T;
-                }
-
-                const fetchResponse: FetchResponse<T> = {
-                    data,
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: response.headers,
-                };
-
-                if (this.config.debug) {
-                    const duration = Date.now() - startTime;
-                    this.log('Request completed successfully', {
-                        url,
-                        status: response.status,
-                        duration: `${duration}ms`,
-                        attempt: attempt + 1
-                    });
-                }
-
-                // Apply response interceptors
-                return await this.applyResponseInterceptors(fetchResponse);
-
-            } catch (error) {
-                const fetchError = error as FetchError;
-
-                // Check if we should retry this error
-                const shouldRetry = attempt < retries &&
-                    this.retryConfig.retryCondition &&
-                    this.retryConfig.retryCondition(fetchError, attempt);
-
-                if (this.config.debug) {
-                    this.log(`Request failed (attempt ${attempt + 1}/${retries + 1})`, {
-                        url,
-                        error: fetchError.message,
-                        shouldRetry
-                    });
-                }
-
-                if (shouldRetry) {
-                    const delay = this.calculateRetryDelay(attempt);
-                    if (this.config.debug) {
-                        this.log(`Retrying in ${delay}ms`, { attempt: attempt + 1, delay });
-                    }
-                    await this.sleep(delay);
-                } else {
-                    lastError = fetchError;
-                    break;
-                }
-
-                lastError = fetchError;
-            }
-        }
-
-        // Apply error interceptors before throwing
-        if (lastError) {
-            const processedError = await this.applyErrorInterceptors(lastError);
-            throw processedError;
-        } else {
-            throw new Error('Request failed with unknown error');
-        }
-    }
-
-    async request<T = unknown>(
-        method: HttpMethod,
-        path: string,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const url = this.createURL(path);
-        return this.executeRequest<T>(url, {
-            ...config,
-            method,
-        });
-    }
-
-    async get<T = unknown>(
-        path: string,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        return this.request<T>('GET', path, config);
-    }
-
-    async post<T = unknown>(
-        path: string,
-        data?: unknown,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const body = this.prepareRequestBody(data);
-        const headers = this.prepareRequestHeaders(data, config.headers);
-
-        return this.request<T>('POST', path, {
-            ...config,
-            headers,
-            body,
-        });
-    }
-
-    async put<T = unknown>(
-        path: string,
-        data?: unknown,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const body = this.prepareRequestBody(data);
-        const headers = this.prepareRequestHeaders(data, config.headers);
-
-        return this.request<T>('PUT', path, {
-            ...config,
-            headers,
-            body,
-        });
-    }
-
-    async patch<T = unknown>(
-        path: string,
-        data?: unknown,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const body = this.prepareRequestBody(data);
-        const headers = this.prepareRequestHeaders(data, config.headers);
-
-        return this.request<T>('PATCH', path, {
-            ...config,
-            headers,
-            body,
-        });
-    }
-
-    async delete<T = unknown>(
-        path: string,
-        config: RequestConfig = {}
-    ): Promise<FetchResponse<T>> {
-        return this.request<T>('DELETE', path, config);
-    }
-
-    // File Upload Methods
-
-    /**
-     * Upload a single file or multiple files
-     */
-    async uploadFile<T = unknown>(
-        path: string,
-        fileData: FileUploadData,
-        config: FileUploadConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const formData = this.createFormDataFromFileData(fileData);
-        return this.uploadFormData<T>(path, formData, config);
-    }
-
-    /**
-     * Upload multiple files
-     */
-    async uploadFiles<T = unknown>(
-        path: string,
-        files: File[],
-        config: FileUploadConfig & { fieldName?: string } = {}
-    ): Promise<FetchResponse<T>> {
-        const { fieldName = 'files', ...uploadConfig } = config;
-
-        const fileData: FileUploadData = {
-            file: files,
-            fieldName,
-        };
-
-        return this.uploadFile<T>(path, fileData, uploadConfig);
-    }
-
-    /**
-     * Upload form data with files and other fields
-     */
-    async uploadFormData<T = unknown>(
-        path: string,
-        formData: FormData | MultipartFormData,
-        config: FileUploadConfig = {}
-    ): Promise<FetchResponse<T>> {
-        const {
-            onProgress,
-            onUploadStart,
-            onUploadComplete,
-            onUploadError,
-            ...requestConfig
-        } = config;
-
-        // Convert object to FormData if needed
-        const finalFormData = formData instanceof FormData
-            ? formData
-            : this.createFormDataFromObject(formData);
-
-        // If progress tracking is needed, use XMLHttpRequest
-        if (onProgress || onUploadStart || onUploadComplete) {
-            return this.uploadWithProgress<T>(path, finalFormData, config);
-        }
-
-        // For simple uploads without progress, use regular fetch
-        return this.uploadWithFetch<T>(path, finalFormData, requestConfig);
-    }
-
-    private createFormDataFromFileData(fileData: FileUploadData): FormData {
-        const formData = new FormData();
-        const { file, fieldName = 'file', additionalFields, fileName } = fileData;
-
-        // Add files
-        if (Array.isArray(file)) {
-            file.forEach((f, index) => {
-                const name = fieldName.endsWith('[]') ? fieldName : `${fieldName}[${index}]`;
-                formData.append(name, f, fileName || f.name);
-            });
-        } else {
-            formData.append(fieldName, file, fileName || file.name);
-        }
-
-        // Add additional fields
-        if (additionalFields) {
-            Object.entries(additionalFields).forEach(([key, value]) => {
-                formData.append(key, String(value));
-            });
-        }
-
-        return formData;
-    }
-
-    private createFormDataFromObject(data: MultipartFormData): FormData {
-        const formData = new FormData();
-
-        Object.entries(data).forEach(([key, value]) => {
-            if (value instanceof File) {
-                formData.append(key, value);
-            } else if (Array.isArray(value)) {
-                value.forEach((item, index) => {
-                    if (item instanceof File) {
-                        const name = key.endsWith('[]') ? key : `${key}[${index}]`;
-                        formData.append(name, item);
-                    } else {
-                        formData.append(`${key}[${index}]`, String(item));
-                    }
-                });
-            } else {
-                formData.append(key, String(value));
-            }
-        });
-
-        return formData;
-    }
-
-    private async uploadWithFetch<T>(
-        path: string,
-        formData: FormData,
-        config: RequestConfig
-    ): Promise<FetchResponse<T>> {
-        // Remove Content-Type header to let browser set it with boundary
-        const { headers, ...restConfig } = config;
-        const cleanHeaders = this.prepareRequestHeaders(formData, headers);
-
-        return this.request<T>('POST', path, {
-            ...restConfig,
-            headers: cleanHeaders,
-            body: formData,
-        });
-    }
-
-    private async uploadWithProgress<T>(
-        path: string,
-        formData: FormData,
-        config: FileUploadConfig
-    ): Promise<FetchResponse<T>> {
-        const {
-            onProgress,
-            onUploadStart,
-            onUploadComplete,
-            onUploadError,
-            timeout = this.config.timeout,
-            signal,
-            headers,
-            ...restConfig
-        } = config;
-
-        return new Promise<FetchResponse<T>>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            const url = this.createURL(path);
-            let startTime = Date.now();
-            let lastLoaded = 0;
-            let lastTime = startTime;
-
-            // Set up progress tracking
-            if (onProgress) {
-                xhr.upload.addEventListener('progress', (event) => {
-                    if (event.lengthComputable) {
-                        const now = Date.now();
-                        const timeDiff = now - lastTime;
-                        const bytesDiff = event.loaded - lastLoaded;
-
-                        const speed = timeDiff > 0 ? (bytesDiff / timeDiff) * 1000 : 0;
-                        const estimatedTime = speed > 0 ? (event.total - event.loaded) / speed : 0;
-
-                        const progressEvent: UploadProgressEvent = {
-                            loaded: event.loaded,
-                            total: event.total,
-                            percentage: Math.round((event.loaded / event.total) * 100),
-                            speed,
-                            estimatedTime,
-                        };
-
-                        onProgress(progressEvent);
-
-                        lastLoaded = event.loaded;
-                        lastTime = now;
-                    }
-                });
-            }
-
-            // Set up event handlers
-            xhr.upload.addEventListener('loadstart', () => {
-                if (this.config.debug) {
-                    this.log('Upload started');
-                }
-                onUploadStart?.();
-            });
-
-            xhr.upload.addEventListener('load', () => {
-                if (this.config.debug) {
-                    this.log('Upload completed');
-                }
-                onUploadComplete?.();
-            });
-
-            xhr.upload.addEventListener('error', () => {
-                const error = new Error('Upload failed');
-                if (this.config.debug) {
-                    this.log('Upload error', error);
-                }
-                onUploadError?.(error);
-                reject(error);
-            });
-
-            xhr.addEventListener('load', () => {
-                try {
-                    const response = this.createResponseFromXHR<T>(xhr);
-                    resolve(response);
-                } catch (error) {
-                    reject(error);
-                }
-            });
-
-            xhr.addEventListener('error', () => {
-                const error = new Error('Network error during upload');
-                onUploadError?.(error);
-                reject(error);
-            });
-
-            xhr.addEventListener('timeout', () => {
-                const error = new Error(`Upload timeout after ${timeout}ms`);
-                onUploadError?.(error);
-                reject(error);
-            });
-
-            // Handle cancellation
-            if (signal) {
-                signal.addEventListener('abort', () => {
-                    xhr.abort();
-                    reject(new Error('Upload cancelled'));
-                });
-            }
-
-            // Set up request
-            xhr.open('POST', url);
-            xhr.timeout = timeout;
-
-            // Set headers (but not Content-Type for FormData)
-            const mergedHeaders: Record<string, string> = { ...this.config.headers };
-            if (headers) {
-                Object.assign(mergedHeaders, headers);
-            }
-
-            Object.entries(mergedHeaders).forEach(([key, value]) => {
-                if (key.toLowerCase() !== 'content-type') {
-                    xhr.setRequestHeader(key, String(value));
-                }
-            });
-
-            // Start upload
-            xhr.send(formData);
-        });
-    }
-
-    private createResponseFromXHR<T>(xhr: XMLHttpRequest): FetchResponse<T> {
-        let data: T;
-
-        try {
-            const contentType = xhr.getResponseHeader('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                data = JSON.parse(xhr.responseText);
-            } else {
-                data = xhr.responseText as unknown as T;
-            }
-        } catch (error) {
-            data = xhr.responseText as unknown as T;
-        }
-
-        if (xhr.status < 200 || xhr.status >= 300) {
-            const error: FetchError = new Error(`HTTP ${xhr.status}: ${xhr.statusText}`);
-            error.status = xhr.status;
-            error.statusText = xhr.statusText;
-            throw error;
-        }
-
-        // Create Headers object from XHR headers
-        const headers = new Headers();
-        const headerString = xhr.getAllResponseHeaders();
-        headerString.split('\r\n').forEach(line => {
-            const [key, value] = line.split(': ');
-            if (key && value) {
-                headers.append(key, value);
-            }
-        });
-
-        return {
-            data,
-            status: xhr.status,
-            statusText: xhr.statusText,
-            headers,
-        };
     }
 }
