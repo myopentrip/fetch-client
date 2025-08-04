@@ -174,7 +174,8 @@ import {
   FetchClient, 
   createAuthConfig,
   createCookieStorage,
-  createSecureCookieStorage 
+  createSecureCookieStorage,
+  createServerSideCookieStorage
 } from '@myopentrip/fetch-client';
 
 // Secure cookie authentication
@@ -212,6 +213,68 @@ const serverStorage = createServerSideCookieStorage(
   (name, value, options) => res.setHeader('Set-Cookie', `${name}=${value}; HttpOnly; Secure`),
   (name) => res.setHeader('Set-Cookie', `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT`)
 );
+```
+
+### Cookie Utilities
+
+```typescript
+import { 
+  getCookie,
+  setCookie,
+  removeCookie,
+  parseCookies,
+  getAllCookies,
+  clearAllCookies,
+  areCookiesEnabled,
+  CookieSession
+} from '@myopentrip/fetch-client';
+
+// Get a specific cookie
+const authToken = getCookie('authToken');
+
+// Set a cookie with options
+setCookie('userPrefs', JSON.stringify({ theme: 'dark' }), {
+  secure: true,
+  sameSite: 'strict',
+  maxAge: 30 * 24 * 60 * 60 // 30 days
+});
+
+// Remove a cookie
+removeCookie('authToken');
+
+// Parse cookies from string
+const cookies = parseCookies(document.cookie);
+
+// Get all cookies as object
+const allCookies = getAllCookies();
+
+// Clear all cookies (limited effectiveness)
+clearAllCookies();
+
+// Check if cookies are enabled
+if (areCookiesEnabled()) {
+  console.log('Cookies are supported');
+}
+
+// Cookie-based session management
+const session = new CookieSession('userSession', {
+  secure: true,
+  maxAge: 8 * 60 * 60 // 8 hours
+});
+
+// Set session data
+session.set({ userId: 123, preferences: { theme: 'dark' } });
+
+// Get session data
+const sessionData = session.get();
+
+// Check if session exists
+if (session.exists()) {
+  console.log('Session found');
+}
+
+// Clear session
+session.clear();
 ```
 
 ### Storage Strategy Comparison
@@ -255,7 +318,10 @@ import {
   FetchClient, 
   createAuthConfig,
   createLoginCredentials,
-  getUserFromToken 
+  getUserFromToken,
+  extractJWTPayload,
+  isTokenExpired,
+  formatTokenTimeRemaining
 } from '@myopentrip/fetch-client';
 
 // Create client with authentication
@@ -317,6 +383,71 @@ if (client.isTokenExpired()) {
 
 // Logout
 await client.logout();
+
+// Get current user information
+const user = client.getUser();
+console.log('Current user:', user);
+
+// Set user information
+client.setUser({ id: 1, name: 'John Doe', email: 'john@example.com' });
+
+// Get authentication state
+const authState = client.getAuthState();
+console.log('Auth state:', authState);
+```
+
+### Advanced Authentication Utilities
+
+```typescript
+import { 
+  extractJWTPayload,
+  getUserFromToken,
+  isTokenExpired,
+  formatTokenTimeRemaining,
+  validateTokenStructure,
+  createSecureStorage,
+  AuthEventEmitter,
+  TokenRefreshQueue
+} from '@myopentrip/fetch-client';
+
+// Extract JWT payload without verification (client-side only)
+const payload = extractJWTPayload(token);
+console.log('Token payload:', payload);
+
+// Get user information from JWT token
+const user = getUserFromToken(token);
+console.log('User from token:', user);
+
+// Check if token is expired or will expire soon
+const isExpired = isTokenExpired(tokens, 300); // Check if expires in 5 minutes
+console.log('Token expired:', isExpired);
+
+// Format time until token expires
+const timeRemaining = formatTokenTimeRemaining(tokens);
+console.log('Time remaining:', timeRemaining);
+
+// Validate token structure
+const validation = validateTokenStructure(tokens);
+if (!validation.valid) {
+  console.error('Token validation errors:', validation.errors);
+}
+
+// Create secure storage with encryption
+const secureStorage = createSecureStorage('your-encryption-key');
+secureStorage.setItem('sensitiveData', 'encrypted-value');
+
+// Auth event emitter for handling auth state changes
+const authEvents = new AuthEventEmitter();
+const unsubscribe = authEvents.on('login', (tokens) => {
+  console.log('User logged in:', tokens);
+});
+
+// Token refresh queue to prevent concurrent refresh requests
+const refreshQueue = new TokenRefreshQueue();
+const tokens = await refreshQueue.startRefresh(async () => {
+  // Your refresh logic here
+  return await refreshTokens();
+});
 ```
 
 ### File Upload Support
@@ -325,9 +456,11 @@ await client.logout();
 import { 
   FetchClient, 
   createFileUploadData, 
+  createProgressCallback,
   validateFile, 
   formatFileSize,
-  formatUploadSpeed 
+  formatUploadSpeed,
+  formatTimeRemaining
 } from '@myopentrip/fetch-client';
 
 const client = new FetchClient({
@@ -356,9 +489,23 @@ await client.uploadFile('/api/upload', { file }, {
   onProgress: (progress) => {
     console.log(`${progress.percentage}% complete`);
     console.log(`Speed: ${formatUploadSpeed(progress.speed)}`);
+    if (progress.estimatedTime) {
+      console.log(`Time remaining: ${formatTimeRemaining(progress.estimatedTime)}`);
+    }
   },
   onUploadStart: () => console.log('Upload started'),
   onUploadComplete: () => console.log('Upload finished'),
+});
+
+// Using progress callback helper
+const progressCallback = createProgressCallback(
+  (percentage) => console.log(`Progress: ${percentage}%`),
+  (speed) => console.log(`Speed: ${formatUploadSpeed(speed)}`),
+  (timeRemaining) => console.log(`ETA: ${formatTimeRemaining(timeRemaining)}`)
+);
+
+await client.uploadFile('/api/upload', { file }, {
+  onProgress: progressCallback
 });
 
 // Complex form data with files and other fields
@@ -476,7 +623,7 @@ export async function GET() {
 new FetchClient(config?: FetchClientConfig)
 ```
 
-### Methods
+### HTTP Methods
 
 - `get<T>(path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
 - `post<T>(path: string, data?: unknown, config?: RequestConfig): Promise<FetchResponse<T>>`
@@ -484,6 +631,33 @@ new FetchClient(config?: FetchClientConfig)
 - `patch<T>(path: string, data?: unknown, config?: RequestConfig): Promise<FetchResponse<T>>`
 - `delete<T>(path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
 - `request<T>(method: HttpMethod, path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
+
+### Authentication Methods
+
+- `login<T>(credentials: LoginCredentials): Promise<FetchResponse<T>>`
+- `logout(): Promise<void>`
+- `setTokens(tokens: AuthTokens): Promise<void>`
+- `getTokens(): AuthTokens | null`
+- `clearTokens(): Promise<void>`
+- `isAuthenticated(): boolean`
+- `isTokenExpired(threshold?: number): boolean`
+- `refreshTokens(): Promise<AuthTokens>`
+- `getAuthState(): AuthState`
+- `setUser(user: any): void`
+- `getUser(): any`
+
+### File Upload Methods
+
+- `uploadFile<T>(path: string, fileData: FileUploadData, config?: FileUploadConfig): Promise<FetchResponse<T>>`
+- `uploadFiles<T>(path: string, files: File[], config?: FileUploadConfig): Promise<FetchResponse<T>>`
+- `uploadFormData<T>(path: string, formData: FormData | MultipartFormData, config?: FileUploadConfig): Promise<FetchResponse<T>>`
+
+### Interceptor Methods
+
+- `addRequestInterceptor(interceptor: RequestInterceptor): () => void`
+- `addResponseInterceptor(interceptor: ResponseInterceptor): () => void`
+- `addErrorInterceptor(interceptor: ErrorInterceptor): () => void`
+- `updateRetryConfig(config: Partial<RetryConfig>): void`
 
 ### Types
 
@@ -501,6 +675,97 @@ interface FetchClientConfig {
   headers?: Record<string, string>;
   retries?: number;
   retryDelay?: number;
+  enableInterceptors?: boolean;
+  debug?: boolean;
+  auth?: AuthConfig;
+}
+
+interface AuthConfig {
+  tokenKey?: string;
+  refreshTokenKey?: string;
+  storage?: 'localStorage' | 'sessionStorage' | 'memory' | 'cookie' | 'custom';
+  cookieOptions?: CookieOptions;
+  customStorage?: {
+    getItem: (key: string) => string | null | Promise<string | null>;
+    setItem: (key: string, value: string) => void | Promise<void>;
+    removeItem: (key: string) => void | Promise<void>;
+  };
+  tokenRefreshUrl?: string;
+  loginUrl?: string;
+  logoutUrl?: string;
+  tokenPrefix?: string;
+  autoRefresh?: boolean;
+  refreshThreshold?: number;
+  onTokenRefresh?: (tokens: AuthTokens) => void | Promise<void>;
+  onTokenExpired?: () => void | Promise<void>;
+  onLoginSuccess?: (tokens: AuthTokens) => void | Promise<void>;
+  onLogout?: () => void | Promise<void>;
+  onAuthError?: (error: FetchError) => void | Promise<void>;
+}
+
+interface AuthTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  expiresAt?: number;
+  tokenType?: string;
+}
+
+interface LoginCredentials {
+  username?: string;
+  email?: string;
+  password: string;
+  [key: string]: any;
+}
+
+interface AuthState {
+  isAuthenticated: boolean;
+  tokens: AuthTokens | null;
+  user?: any;
+  isRefreshing: boolean;
+  lastRefresh?: number;
+}
+
+interface FileUploadConfig extends Omit<RequestConfig, 'body'> {
+  onProgress?: (progress: UploadProgressEvent) => void;
+  onUploadStart?: () => void;
+  onUploadComplete?: () => void;
+  onUploadError?: (error: Error) => void;
+  chunkSize?: number;
+}
+
+interface UploadProgressEvent {
+  loaded: number;
+  total: number;
+  percentage: number;
+  speed?: number;
+  estimatedTime?: number;
+}
+
+interface FileUploadData {
+  file: File | File[];
+  fieldName?: string;
+  additionalFields?: Record<string, string | number | boolean>;
+  fileName?: string;
+}
+
+interface CookieOptions {
+  domain?: string;
+  path?: string;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: 'strict' | 'lax' | 'none';
+  maxAge?: number;
+  expires?: Date;
+}
+
+interface RetryConfig {
+  maxRetries: number;
+  baseDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+  jitter: boolean;
+  retryCondition?: (error: FetchError, attempt: number) => boolean;
 }
 ```
 
