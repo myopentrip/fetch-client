@@ -4,7 +4,7 @@ import type { CookieOptions } from '../types';
 /**
  * Check if we're in a browser environment
  */
-const isBrowser = (): boolean => {
+export const isBrowser = (): boolean => {
     return typeof window !== 'undefined' && typeof document !== 'undefined';
 };
 
