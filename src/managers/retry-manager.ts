@@ -84,7 +84,8 @@ export class RetryManager {
      */
     async executeWithRetry<T>(
         fn: () => Promise<T>,
-        context?: string
+        context?: string,
+        onError?: (error: FetchError) => Promise<FetchError>
     ): Promise<T> {
         let lastError: FetchError | undefined;
         const startTime = Date.now();
@@ -102,7 +103,20 @@ export class RetryManager {
 
                 return result;
             } catch (error) {
-                const fetchError = error as FetchError;
+                let fetchError = error as FetchError;
+                
+                // Apply error interceptors if provided
+                if (onError) {
+                    try {
+                        fetchError = await onError(fetchError);
+                    } catch (interceptorError) {
+                        if (this.debugMode) {
+                            this.log('Error interceptor failed, using original error', interceptorError);
+                        }
+                        // Continue with original error if interceptor fails
+                    }
+                }
+                
                 lastError = fetchError;
 
                 const shouldRetry = this.shouldRetry(fetchError, attempt);

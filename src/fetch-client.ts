@@ -178,6 +178,10 @@ export class FetchClient {
 
         await this.authManager.clearTokens();
         this.removeAuthInterceptor();
+        
+        if (this.config.debug) {
+            this.log('Authentication tokens cleared and interceptors removed');
+        }
     }
 
     /**
@@ -250,7 +254,7 @@ export class FetchClient {
 
             // Apply response interceptors
             return await this.interceptorManager.applyResponseInterceptors(response);
-        }, `${method} ${path}`);
+        }, `${method} ${path}`, (error: FetchError) => this.interceptorManager.applyErrorInterceptors(error));
     }
 
     async get<T = unknown>(
@@ -382,7 +386,10 @@ export class FetchClient {
 
     private removeAuthInterceptor(): void {
         if (this.authInterceptor) {
-            this.interceptorManager.removeRequestInterceptor(this.authInterceptor);
+            const removed = this.interceptorManager.removeRequestInterceptor(this.authInterceptor);
+            if (this.config.debug && !removed) {
+                this.log('Warning: Auth interceptor removal failed - interceptor not found');
+            }
             this.authInterceptor = null;
         }
     }

@@ -37,7 +37,7 @@ export type ErrorInterceptor = (error: FetchError) => FetchError | Promise<Fetch
 
 export interface Interceptors {
     request: RequestInterceptor[];
-    response: ResponseInterceptor[];
+    response: ResponseInterceptor<any>[];
     error: ErrorInterceptor[];
 }
 

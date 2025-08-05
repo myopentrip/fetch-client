@@ -177,7 +177,7 @@ export class InterceptorManager {
 
         for (const interceptor of this.interceptors.response) {
             try {
-                modifiedResponse = await (interceptor as any)(modifiedResponse);
+                modifiedResponse = await (interceptor as any)(modifiedResponse) as FetchResponse<T>;
             } catch (error) {
                 if (this.debugMode) {
                     this.log('Response interceptor failed', error);

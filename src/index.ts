@@ -37,7 +37,7 @@ export const createFetchClient = (config?: FetchClientConfig) => {
     return new FetchClient(config);
 };
 
-export * from './utils/iterceptors';
+export * from './utils/interceptors';
 export * from './utils/formatters';
 export * from './utils/uploadCreators';
 export * from './utils/validators';
