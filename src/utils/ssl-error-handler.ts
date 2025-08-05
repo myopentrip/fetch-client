@@ -1,5 +1,5 @@
 // SSL/TLS Certificate Error Handling Utilities
-import type { FetchError, FetchClientConfig } from '../types';
+import type { FetchError } from '../types';
 
 /**
  * SSL/Certificate error types that can occur during HTTPS requests
@@ -38,48 +38,129 @@ export const defaultSSLErrorConfig: Required<Omit<SSLErrorConfig, 'customTransfo
 
 /**
  * Detect if an error is SSL/certificate related
+ * Handles both browser and Node.js error structures
  */
 export function isSSLError(error: FetchError): boolean {
-    if (!error.message) return false;
+    // Collect all possible error messages to check
+    const messagesToCheck: string[] = [];
     
+    // Add main error message
+    if (error.message) {
+        messagesToCheck.push(error.message);
+    }
+    
+    if (isNodeError(error)) {
+        const cause = (error as any).cause;
+        if (cause.message) {
+            messagesToCheck.push(cause.message);
+        }
+        if (cause.code) {
+            messagesToCheck.push(cause.code);
+        }
+    }
+    
+    // Node.js SystemError properties
+    const nodeError = error as any;
+    if (nodeError.code) {
+        messagesToCheck.push(nodeError.code);
+    }
+    if (nodeError.syscall) {
+        messagesToCheck.push(nodeError.syscall);
+    }
+    
+    // SSL/Certificate error patterns (both Node.js and browser)
     const sslErrorPatterns = [
+        // OpenSSL error codes (Node.js)
         'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        'DEPTH_ZERO_SELF_SIGNED_CERT',
+        'SELF_SIGNED_CERT_IN_CHAIN',
         'CERT_UNTRUSTED',
-        'CERT_INVALID',
-        'CERT_EXPIRED',
+        'CERT_HAS_EXPIRED',
         'CERT_NOT_YET_VALID',
         'CERT_REVOKED',
         'CERT_CHAIN_TOO_LONG',
         'CERT_AUTHORITY_INVALID',
-        'SELF_SIGNED_CERT_IN_CHAIN',
-        'DEPTH_ZERO_SELF_SIGNED_CERT',
-        'SSL_ERROR',
-        'TLS_ERROR',
+        'UNABLE_TO_GET_ISSUER_CERT',
+        'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'CERT_SIGNATURE_FAILURE',
+        'HOSTNAME_MISMATCH',
+        'INVALID_CA',
+        
+        // Node.js TLS error codes
+        'ERR_TLS_CERT_ALTNAME_INVALID',
+        'ERR_TLS_CERT_ALTNAME_FORMAT',
+        'ERR_TLS_HANDSHAKE_TIMEOUT',
+        'ERR_TLS_INVALID_CONTEXT',
+        'ERR_TLS_INVALID_STATE',
+        'ERR_TLS_REQUIRED_SERVER_NAME',
+        
+        // Common SSL/TLS patterns (both environments)
         'certificate verify failed',
-        'ssl certificate problem',
         'certificate has expired',
-        'certificate is not yet valid'
+        'certificate is not yet valid',
+        'self-signed certificate',
+        'ssl certificate problem',
+        'ssl handshake',
+        'tls handshake',
+        'certificate unknown',
+        'bad certificate',
+        'certificate revoked',
+        'certificate_verify_failed',
+        'handshake_failure',
+        'SSL_ERROR',
+        'TLS_ERROR'
     ];
     
-    return sslErrorPatterns.some(pattern => 
-        error.message.toLowerCase().includes(pattern.toLowerCase())
+    // Check all collected messages against SSL patterns
+    return messagesToCheck.some(message => 
+        sslErrorPatterns.some(pattern => 
+            message.toLowerCase().includes(pattern.toLowerCase())
+        )
     );
+}
+
+/**
+ * Check if an error is a Node.js error
+ */
+function isNodeError(error: FetchError): boolean {
+    return 'cause' in error && (error as any).cause && typeof (error as any).cause === 'object';
+}
+
+/**
+ * Get the most relevant error message from the error object
+ * Handles both browser and Node.js error structures
+ */
+function extractErrorMessage(error: FetchError): string {
+    // Node.js: Check error.cause first (this is where the real SSL error is)
+    if (isNodeError(error)) {
+        const cause = (error as any).cause;
+        if (cause.code) {
+            return cause.code;
+        }
+        if (cause.message) {
+            return cause.message;
+        }
+    }
+    
+    // Fallback to main error message
+    return error.message || 'Unknown SSL error';
 }
 
 /**
  * Analyze SSL error and provide detailed information
  */
 export function analyzeSSLError(error: FetchError): SSLErrorInfo {
-    const message = error.message?.toLowerCase() || '';
+    const originalMessage = error.message || '';
+    const relevantMessage = extractErrorMessage(error).toLowerCase();
     
     // Certificate verification errors
-    if (message.includes('unable_to_verify_leaf_signature') || 
-        message.includes('certificate verify failed')) {
+    if (relevantMessage.includes('unable_to_verify_leaf_signature') || 
+        relevantMessage.includes('certificate verify failed')) {
         return {
             type: 'certificate',
-            originalError: error.message,
+            originalError: originalMessage,
             userFriendlyMessage: 'SSL certificate verification failed. The server\'s certificate could not be verified.',
-            technicalDetails: `Certificate verification error: ${error.message}`,
+            technicalDetails: `Certificate verification error: ${relevantMessage}`,
             suggestions: [
                 'Check if the server certificate is valid and properly configured',
                 'Verify the certificate chain is complete',
@@ -91,12 +172,14 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     }
     
     // Self-signed certificate errors
-    if (message.includes('self_signed_cert') || message.includes('depth_zero_self_signed_cert')) {
+    if (relevantMessage.includes('self_signed_cert') || 
+        relevantMessage.includes('depth_zero_self_signed_cert') ||
+        relevantMessage.includes('self-signed certificate')) {
         return {
             type: 'certificate',
-            originalError: error.message,
+            originalError: originalMessage,
             userFriendlyMessage: 'The server is using a self-signed certificate which cannot be verified.',
-            technicalDetails: `Self-signed certificate error: ${error.message}`,
+            technicalDetails: `Self-signed certificate error: ${relevantMessage}`,
             suggestions: [
                 'For development: You may need to configure certificate acceptance',
                 'For production: The server should use a properly signed certificate',
@@ -107,12 +190,14 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     }
     
     // Expired certificate
-    if (message.includes('cert_expired') || message.includes('certificate has expired')) {
+    if (relevantMessage.includes('cert_expired') || 
+        relevantMessage.includes('certificate has expired') ||
+        relevantMessage.includes('cert_has_expired')) {
         return {
             type: 'certificate',
-            originalError: error.message,
+            originalError: originalMessage,
             userFriendlyMessage: 'The server\'s SSL certificate has expired.',
-            technicalDetails: `Certificate expiration error: ${error.message}`,
+            technicalDetails: `Certificate expiration error: ${relevantMessage}`,
             suggestions: [
                 'The server administrator needs to renew the SSL certificate',
                 'This is a server-side issue that cannot be resolved from the client',
@@ -123,12 +208,13 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     }
     
     // Invalid certificate authority
-    if (message.includes('cert_authority_invalid') || message.includes('cert_untrusted')) {
+    if (relevantMessage.includes('cert_authority_invalid') || 
+        relevantMessage.includes('cert_untrusted')) {
         return {
             type: 'certificate',
-            originalError: error.message,
+            originalError: originalMessage,
             userFriendlyMessage: 'The server\'s certificate authority is not trusted.',
-            technicalDetails: `Certificate authority error: ${error.message}`,
+            technicalDetails: `Certificate authority error: ${relevantMessage}`,
             suggestions: [
                 'The certificate was issued by an untrusted authority',
                 'Verify the certificate chain includes all intermediate certificates',
@@ -139,12 +225,15 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     }
     
     // Generic SSL/TLS errors
-    if (message.includes('ssl') || message.includes('tls')) {
+    if (relevantMessage.includes('ssl') || 
+        relevantMessage.includes('tls') || 
+        relevantMessage.includes('handshake') ||
+        (relevantMessage.includes('fetch failed') && isNodeError(error))) {
         return {
             type: 'certificate',
-            originalError: error.message,
+            originalError: originalMessage,
             userFriendlyMessage: 'SSL/TLS connection error occurred.',
-            technicalDetails: `SSL/TLS error: ${error.message}`,
+            technicalDetails: `SSL/TLS error: ${relevantMessage}`,
             suggestions: [
                 'Check your internet connection',
                 'Verify the server supports the required SSL/TLS version',
@@ -158,9 +247,9 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     // Fallback for unknown SSL errors
     return {
         type: 'unknown',
-        originalError: error.message,
+        originalError: originalMessage,
         userFriendlyMessage: 'A secure connection error occurred.',
-        technicalDetails: `Connection error: ${error.message}`,
+        technicalDetails: `Connection error: ${relevantMessage}`,
         suggestions: [
             'Check your internet connection',
             'Try again in a few moments',
@@ -174,7 +263,7 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
  * Transform SSL error into user-friendly format
  */
 export function transformSSLError(
-    error: FetchError, 
+    error: FetchError,
     config: SSLErrorConfig = {},
     isDevelopment: boolean = false
 ): FetchError {

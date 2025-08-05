@@ -197,7 +197,8 @@ export class InterceptorManager {
             return error;
         }
 
-        let modifiedError = { ...error };
+        // Properly clone the error while preserving Error prototype
+        let modifiedError = this.cloneError(error);
 
         for (const interceptor of this.interceptors.error) {
             try {
@@ -211,6 +212,24 @@ export class InterceptorManager {
         }
 
         return modifiedError;
+    }
+
+    /**
+     * Properly clone an error object while preserving its Error nature
+     */
+    private cloneError(error: FetchError): FetchError {
+        // Create a new error with the same message
+        const cloned = new Error(error.message) as FetchError;
+        
+        // Copy all enumerable properties
+        Object.assign(cloned, error);
+        
+        // Ensure critical properties are preserved
+        if (error.stack) cloned.stack = error.stack;
+        if ('cause' in error && (error as any).cause) (cloned as any).cause = (error as any).cause;
+        if (error.name) cloned.name = error.name;
+        
+        return cloned;
     }
 
     /**
