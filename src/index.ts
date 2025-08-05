@@ -8,6 +8,7 @@ export { RetryManager } from './managers/retry-manager';
 
 export type {
     FetchClientConfig,
+    SSLErrorHandlingConfig,
     RequestConfig,
     FetchResponse,
     FetchError,
