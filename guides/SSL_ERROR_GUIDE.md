@@ -2,11 +2,7 @@
 
 The `@myopentrip/fetch-client` package provides intelligent SSL/TLS certificate error handling to improve user experience and debugging capabilities.
 
-## 🔒 **Answer to Your Question**
-
-**Should we throw "UNABLE_TO_VERIFY_LEAF_SIGNATURE" directly or let users customize?**
-
-**Answer: HYBRID APPROACH** ✅
+## 🔒 **HYBRID APPROACH**
 
 We provide **both automatic handling AND full customization**:
 
