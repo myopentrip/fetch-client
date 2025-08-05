@@ -19,7 +19,9 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
-    "prepublishOnly": "pnpm run clean && pnpm run build"
+    "prepublishOnly": "pnpm run clean && pnpm run build",
+    "test:interceptors": "npx tsx tests/interceptor-test.ts",
+    "example:interceptors": "npx tsx examples/interceptor-examples.ts"
   },
   "keywords": [
     "fetch",
