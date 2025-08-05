@@ -7,6 +7,18 @@ export interface FetchClientConfig {
     enableInterceptors?: boolean;
     debug?: boolean;
     auth?: AuthConfig;
+    sslErrorHandling?: SSLErrorHandlingConfig;
+}
+
+export interface SSLErrorHandlingConfig {
+    /** Whether to automatically transform SSL errors into user-friendly messages (default: true) */
+    enabled?: boolean;
+    /** Whether to include technical details in error messages (default: false in production) */
+    includeTechnicalDetails?: boolean;
+    /** Whether to include suggestions for resolving SSL errors (default: true) */
+    includeSuggestions?: boolean;
+    /** Custom SSL error transformer function */
+    customTransformer?: (error: FetchError) => FetchError;
 }
 
 export interface RequestConfig extends RequestInit {

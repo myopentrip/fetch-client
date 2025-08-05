@@ -21,7 +21,9 @@
     "clean": "rm -rf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "test:interceptors": "npx tsx tests/interceptor-test.ts",
-    "example:interceptors": "npx tsx examples/interceptor-examples.ts"
+    "test:ssl": "npx tsx tests/ssl-error-test.ts",
+    "example:interceptors": "npx tsx examples/interceptor-examples.ts",
+    "example:ssl": "npx tsx examples/ssl-error-examples.ts"
   },
   "keywords": [
     "fetch",

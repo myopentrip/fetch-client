@@ -14,7 +14,8 @@ import type {
     AuthConfig,
     AuthTokens,
     AuthState,
-    LoginCredentials
+    LoginCredentials,
+    SSLErrorHandlingConfig
 } from './types';
 
 import { AuthManager } from './managers/auth-manager';
@@ -22,9 +23,13 @@ import { UploadManager } from './managers/upload-manager';
 import { InterceptorManager } from './managers/interceptor-manager';
 import { RequestExecutor } from './managers/request-executor';
 import { RetryManager } from './managers/retry-manager';
+import { createSSLErrorInterceptor } from './utils/ssl-error-handler';
 
 export class FetchClient {
-    private config: Required<Omit<FetchClientConfig, 'auth'>> & { auth?: AuthConfig };
+    private config: Required<Omit<FetchClientConfig, 'auth' | 'sslErrorHandling'>> & { 
+        auth?: AuthConfig; 
+        sslErrorHandling?: SSLErrorHandlingConfig; 
+    };
     private authManager: AuthManager | null = null;
     private uploadManager: UploadManager;
     private interceptorManager: InterceptorManager;
@@ -44,6 +49,12 @@ export class FetchClient {
             enableInterceptors: config.enableInterceptors !== false,
             debug: config.debug || false,
             auth: config.auth,
+            sslErrorHandling: {
+                enabled: true,
+                includeTechnicalDetails: config.debug || false,
+                includeSuggestions: true,
+                ...config.sslErrorHandling
+            }
         };
 
         // Initialize managers
@@ -81,6 +92,16 @@ export class FetchClient {
         // Initialize auth if configured
         if (this.config.auth) {
             this.initializeAuth();
+        }
+
+        // Add SSL error handling if enabled
+        if (this.config.sslErrorHandling?.enabled !== false) {
+            this.addErrorInterceptor(
+                createSSLErrorInterceptor(
+                    this.config.sslErrorHandling,
+                    this.config.debug
+                )
+            );
         }
     }
 
