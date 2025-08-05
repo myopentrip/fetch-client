@@ -7,7 +7,8 @@ A reusable, TypeScript-first HTTP client built on top of the native Fetch API. D
 - 🔥 **TypeScript-first** with full type safety
 - ⏹️ **Request Cancellation** with AbortController support
 - 🔄 **Smart Retry Logic** with exponential backoff and jitter
-- 🎯 **Interceptor System** for requests, responses, and errors
+- 🎯 **Full Interceptor System** for requests, responses, and errors
+- 🔒 **SSL/Certificate Error Handling** with user-friendly messages
 - 📁 **File Upload Support** with progress tracking and validation
 - 🔐 **Authentication Management** with automatic token refresh
 - ⏱️ **Request timeout** handling
@@ -17,6 +18,7 @@ A reusable, TypeScript-first HTTP client built on top of the native Fetch API. D
 - 🛠️ **Native Fetch API** (works in Node.js 18+ and all modern browsers)
 - 🐛 **Debug mode** with comprehensive logging
 - 🔐 **Built-in auth helpers** and common interceptors
+- 🧪 **Comprehensive test suite** with examples
 
 ## Installation
 
@@ -137,6 +139,8 @@ try {
 
 ### Interceptor System
 
+All three types of interceptors are now working perfectly and integrate with the retry system.
+
 ```typescript
 // Request interceptors (modify outgoing requests)
 const removeAuthInterceptor = client.addRequestInterceptor(async (config) => {
@@ -158,6 +162,14 @@ const removeResponseInterceptor = client.addResponseInterceptor((response) => {
 const removeErrorInterceptor = client.addErrorInterceptor((error) => {
   console.error('Request failed:', error.message);
   // Transform error, add context, send to monitoring, etc.
+  
+  // Add custom error categorization
+  if (!error.status) {
+    error.category = 'NETWORK_ERROR';
+  } else if (error.status >= 500) {
+    error.category = 'SERVER_ERROR';
+  }
+  
   return error;
 });
 
@@ -165,6 +177,15 @@ const removeErrorInterceptor = client.addErrorInterceptor((error) => {
 removeAuthInterceptor();
 removeResponseInterceptor();
 removeErrorInterceptor();
+```
+
+**Test the interceptor system:**
+```bash
+# Run comprehensive interceptor tests
+pnpm run test:interceptors
+
+# See real-world interceptor examples
+pnpm run example:interceptors
 ```
 
 ### Cookie-Based Authentication (Recommended for Production)
@@ -294,7 +315,13 @@ session.clear();
 import { 
   createAuthInterceptor, 
   createLoggingInterceptor,
-  createTimingInterceptor 
+  createTimingInterceptor,
+  // SSL Error Handling
+  createSSLErrorInterceptor,
+  createDevelopmentSSLErrorInterceptor,
+  createProductionSSLErrorInterceptor,
+  isSSLError,
+  analyzeSSLError
 } from '@myopentrip/fetch-client';
 
 // Automatic auth token injection
@@ -309,6 +336,97 @@ client.addRequestInterceptor(createLoggingInterceptor(true));
 const timing = createTimingInterceptor();
 client.addRequestInterceptor(timing.request);
 client.addResponseInterceptor(timing.response);
+
+// SSL Error Handling (enabled by default)
+client.addErrorInterceptor(createSSLErrorInterceptor());
+```
+
+### SSL/Certificate Error Handling
+
+The package automatically transforms cryptic SSL errors into user-friendly messages:
+
+```typescript
+import { 
+  FetchClient,
+  createSSLErrorInterceptor,
+  createDevelopmentSSLErrorInterceptor,
+  createProductionSSLErrorInterceptor,
+  isSSLError,
+  analyzeSSLError
+} from '@myopentrip/fetch-client';
+
+// SSL error handling is ENABLED BY DEFAULT
+const client = new FetchClient({
+  baseURL: 'https://api.example.com'
+  // SSL errors are automatically transformed!
+});
+
+try {
+  await client.get('/secure-endpoint');
+} catch (error) {
+  // BEFORE: "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+  // AFTER:  "SSL certificate verification failed. The server's certificate could not be verified."
+  
+  console.log(error.message); // User-friendly message
+  console.log(error.sslError.suggestions); // Actionable solutions
+}
+
+// Custom SSL error handling
+const customClient = new FetchClient({
+  baseURL: 'https://api.example.com',
+  sslErrorHandling: {
+    enabled: true,
+    includeTechnicalDetails: true, // Show details in development
+    includeSuggestions: true,      // Show helpful suggestions
+    customTransformer: (error) => {
+      // Send to monitoring service
+      monitoringService.reportSSLError(error);
+      return error;
+    }
+  }
+});
+
+// Development vs Production modes
+const devClient = new FetchClient({
+  baseURL: 'https://localhost:8443',
+  debug: true // Automatically shows technical details
+});
+
+const prodClient = new FetchClient({
+  baseURL: 'https://api.production.com',
+  sslErrorHandling: {
+    includeTechnicalDetails: false, // Hide technical details
+    includeSuggestions: false       // Hide suggestions from end users
+  }
+});
+
+// Manual SSL error analysis
+try {
+  await client.get('/api/data');
+} catch (error) {
+  if (isSSLError(error)) {
+    const analysis = analyzeSSLError(error);
+    console.log('Error type:', analysis.type);
+    console.log('User message:', analysis.userFriendlyMessage);
+    console.log('Retryable:', analysis.retryable);
+    console.log('Suggestions:', analysis.suggestions);
+  }
+}
+
+// Disable SSL error handling (get raw errors)
+const rawClient = new FetchClient({
+  baseURL: 'https://api.example.com',
+  sslErrorHandling: { enabled: false }
+});
+```
+
+**Test SSL error handling:**
+```bash
+# Run SSL error tests
+pnpm run test:ssl
+
+# See real-world SSL examples
+pnpm run example:ssl
 ```
 
 ### Authentication Management
@@ -659,6 +777,17 @@ new FetchClient(config?: FetchClientConfig)
 - `addErrorInterceptor(interceptor: ErrorInterceptor): () => void`
 - `updateRetryConfig(config: Partial<RetryConfig>): void`
 
+### SSL Error Handling Methods
+
+- `isSSLError(error: FetchError): boolean` - Detect SSL/certificate errors
+- `analyzeSSLError(error: FetchError): SSLErrorInfo` - Get detailed SSL error analysis
+- `transformSSLError(error: FetchError, config?: SSLErrorConfig): FetchError` - Transform SSL errors
+- `shouldRetrySSLError(error: FetchError): boolean` - Check if SSL error is retryable
+- `getSSLErrorSuggestions(error: FetchError): string[]` - Get actionable suggestions
+- `createSSLErrorInterceptor(config?: SSLErrorConfig): ErrorInterceptor` - Create SSL error interceptor
+- `createDevelopmentSSLErrorInterceptor(): ErrorInterceptor` - Development-friendly SSL interceptor
+- `createProductionSSLErrorInterceptor(): ErrorInterceptor` - Production-safe SSL interceptor
+
 ### Types
 
 ```typescript
@@ -678,6 +807,14 @@ interface FetchClientConfig {
   enableInterceptors?: boolean;
   debug?: boolean;
   auth?: AuthConfig;
+  sslErrorHandling?: SSLErrorHandlingConfig;
+}
+
+interface SSLErrorHandlingConfig {
+  enabled?: boolean; // Default: true
+  includeTechnicalDetails?: boolean; // Default: false (true in debug mode)
+  includeSuggestions?: boolean; // Default: true
+  customTransformer?: (error: FetchError) => FetchError;
 }
 
 interface AuthConfig {
@@ -767,6 +904,36 @@ interface RetryConfig {
   jitter: boolean;
   retryCondition?: (error: FetchError, attempt: number) => boolean;
 }
+
+interface SSLErrorInfo {
+  type: 'certificate' | 'network' | 'timeout' | 'unknown';
+  originalError: string;
+  userFriendlyMessage: string;
+  technicalDetails: string;
+  suggestions: string[];
+  retryable: boolean;
+}
+```
+
+## Testing and Examples
+
+The package includes comprehensive tests and real-world examples:
+
+```bash
+# Test the interceptor system
+pnpm run test:interceptors
+
+# Test SSL error handling
+pnpm run test:ssl
+
+# See interceptor examples
+pnpm run example:interceptors
+
+# See SSL error handling examples
+pnpm run example:ssl
+
+# Build the package
+pnpm run build
 ```
 
 ## License
