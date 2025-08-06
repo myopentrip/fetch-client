@@ -1,5 +1,18 @@
 # Recent Improvements ✨
 
+## v2.7.0
+
+### 🚀 Enhancements
+
+- **Enhanced HTTP Error Messages** - HTTP error messages now include descriptive status text based on numeric status codes, providing consistent and informative error descriptions even when server-provided `statusText` is missing or inconsistent.
+- Added comprehensive HTTP status code mapping (1xx-5xx) with fallback logic to preserve original `statusText` when it differs from standard descriptions.
+- Improved error handling reliability across different server implementations and environments.
+
+### 💡 Error Message Examples:
+- `HTTP 404: Not Found` (instead of `HTTP 404: ` when statusText is empty)
+- `HTTP 500: Internal Server Error` (consistent descriptions regardless of server implementation)
+- `HTTP 404: Not Found (Custom Message)` (preserves custom statusText when different from standard)
+
 ## v2.6.0
 
 ### 🚀 Enhancements

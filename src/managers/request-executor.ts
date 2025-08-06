@@ -4,6 +4,7 @@ import type {
     FetchError,
     HttpMethod
 } from '../types';
+import { formatHTTPErrorMessage } from '../utils/formatters';
 
 export class RequestExecutor {
     private baseURL: string;
@@ -77,7 +78,8 @@ export class RequestExecutor {
             }
 
             if (!response.ok) {
-                const error: FetchError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const errorMessage = formatHTTPErrorMessage(response.status, response.statusText);
+                const error: FetchError = new Error(errorMessage);
                 error.status = response.status;
                 error.statusText = response.statusText;
                 error.response = response;

@@ -1,6 +1,6 @@
 {
   "name": "@myopentrip/fetch-client",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "A reusable fetch client for modern JavaScript/TypeScript applications",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -23,7 +23,8 @@
     "test:interceptors": "npx tsx tests/interceptor-test.ts",
     "test:ssl": "npx tsx tests/ssl-error-test.ts",
     "example:interceptors": "npx tsx examples/interceptor-examples.ts",
-    "example:ssl": "npx tsx examples/ssl-error-examples.ts"
+    "example:ssl": "npx tsx examples/ssl-error-examples.ts",
+    "example:errors": "npx tsx examples/enhanced-error-examples.ts"
   },
   "keywords": [
     "fetch",
