@@ -152,10 +152,12 @@ function extractErrorMessage(error: FetchError): string {
 export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     const originalMessage = error.message || '';
     const relevantMessage = extractErrorMessage(error).toLowerCase();
+    const nodeError = error as any;
     
     // Certificate verification errors
     if (relevantMessage.includes('unable_to_verify_leaf_signature') || 
-        relevantMessage.includes('certificate verify failed')) {
+        relevantMessage.includes('certificate verify failed') ||
+        nodeError.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
         return {
             type: 'certificate',
             originalError: originalMessage,
@@ -174,7 +176,8 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     // Self-signed certificate errors
     if (relevantMessage.includes('self_signed_cert') || 
         relevantMessage.includes('depth_zero_self_signed_cert') ||
-        relevantMessage.includes('self-signed certificate')) {
+        relevantMessage.includes('self-signed certificate') ||
+        nodeError.code === 'DEPTH_ZERO_SELF_SIGNED_CERT') {
         return {
             type: 'certificate',
             originalError: originalMessage,
@@ -192,7 +195,8 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     // Expired certificate
     if (relevantMessage.includes('cert_expired') || 
         relevantMessage.includes('certificate has expired') ||
-        relevantMessage.includes('cert_has_expired')) {
+        relevantMessage.includes('cert_has_expired') ||
+        nodeError.code === 'CERT_HAS_EXPIRED') {
         return {
             type: 'certificate',
             originalError: originalMessage,
@@ -209,7 +213,8 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     
     // Invalid certificate authority
     if (relevantMessage.includes('cert_authority_invalid') || 
-        relevantMessage.includes('cert_untrusted')) {
+        relevantMessage.includes('cert_untrusted') ||
+        nodeError.code === 'CERT_UNTRUSTED') {
         return {
             type: 'certificate',
             originalError: originalMessage,
@@ -228,7 +233,8 @@ export function analyzeSSLError(error: FetchError): SSLErrorInfo {
     if (relevantMessage.includes('ssl') || 
         relevantMessage.includes('tls') || 
         relevantMessage.includes('handshake') ||
-        (relevantMessage.includes('fetch failed') && isNodeError(error))) {
+        (relevantMessage.includes('fetch failed') && 'cause' in error && (error as any).cause) ||
+        nodeError.code?.includes('TLS_')) {
         return {
             type: 'certificate',
             originalError: originalMessage,
