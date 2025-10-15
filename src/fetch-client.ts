@@ -41,7 +41,6 @@ export class FetchClient {
             baseURL: config.baseURL || '',
             timeout: config.timeout || 10000,
             headers: {
-                'Content-Type': 'application/json',
                 ...config.headers,
             },
             retries: config.retries || 0,
@@ -464,10 +463,23 @@ export class FetchClient {
             }
         }
 
+        // Check if Content-Type is already set (case-insensitive)
+        const hasContentType = Object.keys(headers).some(
+            key => key.toLowerCase() === 'content-type'
+        );
+
         // If data is FormData, remove Content-Type to let browser set it with boundary
         if (data instanceof FormData) {
             delete headers['Content-Type'];
             delete headers['content-type'];
+        }
+        // If sending JSON data and no Content-Type is set, default to application/json
+        else if (data && !hasContentType && 
+                 !(data instanceof Blob) && 
+                 !(data instanceof ArrayBuffer) && 
+                 !(data instanceof URLSearchParams) && 
+                 typeof data !== 'string') {
+            headers['Content-Type'] = 'application/json';
         }
 
         return headers;
