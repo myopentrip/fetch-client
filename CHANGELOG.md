@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [3.1.0] - 2026-05-23
+
 ### Added
 
 - **Auth plugin singleton:** calling `createAuthPlugin` twice on the same `FetchClient` returns the existing instance instead of registering duplicate interceptors.
