@@ -1,13 +1,13 @@
 # Architecture: Core vs Plugins
 
-> **Status:** v3 design draft — implemented in `src/core` and `src/plugins`.
+> **Status:** v3 — implemented in `src/core` and `src/plugins`.
 
 ## Goals
 
-1. **Core tetap kecil** — fetch wrapper dengan timeout, retry, interceptors.
-2. **Fitur berat opsional** — auth, upload, SSL via subpath import (tree-shakeable).
-3. **Satu pipeline request** — semua HTTP lewat `FetchClient.request()` kecuali upload progress (XHR, terdokumentasi).
-4. **Mudah dirawat** — tidak ada duplikasi `prepareRequestBody` / `createURL` di banyak class.
+1. **Keep the core small** — a fetch wrapper with timeout, retry, and interceptors.
+2. **Heavy features are optional** — auth, upload, and SSL via subpath imports (tree-shakeable).
+3. **Single request pipeline** — all HTTP goes through `FetchClient.request()`, except upload with progress (XHR, documented).
+4. **Easy to maintain** — no duplicated `prepareRequestBody` / `createURL` logic across classes.
 
 ---
 
@@ -88,19 +88,22 @@ sequenceDiagram
   RM->>IM: applyErrorInterceptors
 ```
 
+Error interceptors may return a `FetchResponse` to recover from an error (used by the auth plugin for 401 retry).
+
 ### `RequestMeta`
 
-Core menempelkan metadata ke response agar plugin bisa membuat keputusan tanpa global state:
+The core attaches metadata to every response so plugins can make decisions without global state:
 
 ```typescript
 interface RequestMeta {
   path: string;
   method: HttpMethod;
-  skipAuthRefresh?: boolean; // dipakai auth plugin pada login/logout/refresh
+  skipAuthRefresh?: boolean; // used by auth plugin on login/logout/refresh
+  authRetried?: boolean;     // internal: prevents infinite retry after refresh
 }
 ```
 
-### Plugin hook (opsional)
+### Plugin hook (optional)
 
 ```typescript
 interface FetchClientPlugin {
@@ -118,7 +121,7 @@ await client.use(createSSLErrorPlugin({ debug: true }));
 
 ### Auth (`@myopentrip/fetch-client/auth`)
 
-**Composition, bukan inheritance** — plugin memegang `FetchClient` dan mendaftarkan interceptors.
+**Composition, not inheritance** — the plugin holds a `FetchClient` reference and registers interceptors.
 
 ```typescript
 import { FetchClient } from '@myopentrip/fetch-client';
@@ -132,19 +135,26 @@ const auth = await createAuthPlugin(client, {
 });
 
 await auth.login({ email: 'a@b.com', password: '***' });
-await client.get('/me'); // Authorization header otomatis
+await client.get('/me'); // Authorization header added automatically
 await auth.logout();
 ```
 
-**Perilaku v3 (perbaikan bug v2):**
+**v3 behavior (fixes from v2):**
 
-- `await createAuthPlugin()` — init async (load token) selesai sebelum dipakai.
-- 401 + `refreshToken` → coba refresh (tidak bergantung `expiresAt`).
-- Login/logout/refresh memakai `skipAuthRefresh` — tidak memicu refresh loop.
-- `memory` storage — satu `Map` per instance plugin.
-- Header auth lewat `mergeHeaders()` — aman untuk `Headers` / array.
+- `await createAuthPlugin()` — async init (load tokens) completes before use.
+- 401 + `refreshToken` → attempt refresh (does not require `expiresAt`).
+- Login/logout/refresh use `skipAuthRefresh` — avoids refresh loops.
+- `memory` storage — one `Map` per plugin instance.
+- Auth headers via `mergeHeaders()` — safe for `Headers` objects and arrays.
 
-**Retry setelah refresh:** pada 401, setelah refresh sukses, request asli dijalankan ulang sekali (`authRetried` di meta mencegah loop). Nonaktifkan dengan `retryAfterRefresh: false`.
+**Retry after refresh:** on 401, after a successful refresh, the original request is retried once (`authRetried` in meta prevents loops). Parallel 401s wait for **one** refresh wave (`recoveryPromise` + refcount), then each failed request retries individually.
+
+**One plugin per client:** `createAuthPlugin(client)` is stored in a `WeakMap` — a second call returns the same instance. `auth.teardown()` unregisters it so a new plugin can be attached. Use `AuthPlugin.getForClient(client)` to check registration.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `autoRefresh` | `true` | Register 401 error recovery |
+| `retryAfterRefresh` | `true` | Retry the failed request after refresh |
 
 ### Upload (`@myopentrip/fetch-client/upload`)
 
@@ -157,12 +167,12 @@ await upload.uploadFile('/files', { file, fieldName: 'file' });
 
 | Mode | Pipeline |
 |------|----------|
-| Tanpa `onProgress` | `client.request('POST', …)` — interceptors + retry |
-| Dengan `onProgress` | XMLHttpRequest — **tanpa** retry/interceptor response; header dari `client.getDefaultHeaders()` |
+| Without `onProgress` | `client.request('POST', …)` — interceptors + retry |
+| With `onProgress` | XMLHttpRequest — **no** response interceptors or retry; headers from `client.getDefaultHeaders()` |
 
 ### SSL (`@myopentrip/fetch-client/ssl`)
 
-Error interceptor opsional — tidak lagi default-on di core.
+Optional error interceptor — no longer enabled by default in core.
 
 ```typescript
 import { createSSLErrorPlugin } from '@myopentrip/fetch-client/ssl';
@@ -174,13 +184,13 @@ await client.use(createSSLErrorPlugin({ includeSuggestions: true }));
 ## Imports & bundle size
 
 ```typescript
-// Hanya core (~minimal)
+// Core only (~minimal)
 import { FetchClient } from '@myopentrip/fetch-client';
 
-// Tambah auth saat perlu
+// Add auth when needed
 import { createAuthPlugin } from '@myopentrip/fetch-client/auth';
 
-// Tambah upload saat perlu
+// Add upload when needed
 import { createUploadPlugin } from '@myopentrip/fetch-client/upload';
 ```
 
@@ -197,29 +207,30 @@ import { createUploadPlugin } from '@myopentrip/fetch-client/upload';
 
 ---
 
-## Migration dari v2
+## Migration from v2
 
 | v2 | v3 |
 |----|-----|
 | `new FetchClient({ auth: {...} })` | `createAuthPlugin(client, {...})` |
-| `client.uploadFile(...)` | `createUploadPlugin(client).uploadFile(...)` |
-| SSL default enabled | `client.use(createSSLErrorPlugin())` |
-| `AuthManager` dari main export | `@myopentrip/fetch-client/auth` |
-| `RequestConfig.retries` (tidak jalan) | Hapus — gunakan `client.updateRetryConfig()` |
+| `client.login()` / `client.uploadFile()` | `auth.login()` / `upload.uploadFile()` |
+| SSL enabled by default | `await client.use(createSSLErrorPlugin())` |
+| `AuthManager` from main export | `@myopentrip/fetch-client/auth` |
+| `RequestConfig.retries` (not implemented) | Removed — use `client.updateRetryConfig()` |
+| `FetchResponse` without `meta` | `meta: { path, method }` on every response |
 
 ---
 
-## Future plugins (tidak di scope v3)
+## Future plugins (out of v3 scope)
 
 - `@myopentrip/fetch-client/cache` — response cache
 - `@myopentrip/fetch-client/mock` — testing adapter
-- Server middleware (lihat `proof-of-concept/server-package`) — package terpisah
+- Server middleware (see `proof-of-concept/server-package`) — separate package
 
 ---
 
 ## Principles
 
-1. **Core tidak import plugin** — dependency satu arah: plugin → core.
-2. **Shared logic di `request-helpers`** — satu sumber untuk URL, body, headers.
-3. **Plugin = setup interceptors + API domain** — tidak duplikasi executor.
-4. **Dokumentasikan escape hatch** — upload XHR adalah pengecualian yang disengaja.
+1. **Core must not import plugins** — one-way dependency: plugin → core.
+2. **Shared logic lives in `request-helpers`** — single source for URL, body, and headers.
+3. **Plugin = register interceptors + domain API** — no duplicated executor logic.
+4. **Document escape hatches** — upload via XHR is an intentional exception.

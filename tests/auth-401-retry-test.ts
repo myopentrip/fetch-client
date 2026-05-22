@@ -2,7 +2,7 @@
  * Verifies automatic retry after 401 + token refresh (v3 auth plugin)
  */
 import { FetchClient } from '../src/index';
-import { createAuthPlugin } from '../src/auth';
+import { AuthPlugin, createAuthPlugin } from '../src/auth';
 
 const originalFetch = globalThis.fetch;
 
@@ -116,9 +116,107 @@ async function test401NoRetryWhenDisabled() {
     }
 }
 
+async function testDuplicateCreateAuthPlugin() {
+    console.log('\n🔐 Testing duplicate createAuthPlugin on same client\n');
+
+    const client = new FetchClient({ baseURL: 'https://api.test' });
+    const auth1 = await createAuthPlugin(client, { storage: 'memory' });
+    const auth2 = await createAuthPlugin(client, { storage: 'memory' });
+
+    if (auth1 !== auth2) {
+        throw new Error('Expected same AuthPlugin instance when createAuthPlugin is called twice');
+    }
+
+    if (AuthPlugin.getForClient(client) !== auth1) {
+        throw new Error('getForClient should return the registered plugin');
+    }
+
+    auth1.teardown();
+
+    const auth3 = await createAuthPlugin(client, { storage: 'memory' });
+    if (auth3 === auth1) {
+        throw new Error('Expected new instance after teardown');
+    }
+
+    auth3.teardown();
+    console.log('✅ Duplicate createAuthPlugin reuses instance; teardown allows re-register');
+}
+
+async function testParallel401SingleRefreshWave() {
+    console.log('\n🔐 Testing parallel 401 → one refresh wave\n');
+
+    let refreshCalls = 0;
+    let protectedCalls = 0;
+
+    globalThis.fetch = async (input) => {
+        const url = String(input);
+
+        if (url.includes('/auth/refresh')) {
+            refreshCalls++;
+            return new Response(
+                JSON.stringify({
+                    accessToken: 'new-token',
+                    refreshToken: 'refresh-token',
+                    expiresIn: 3600,
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
+
+        protectedCalls++;
+        if (protectedCalls <= 3) {
+            return new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' });
+        }
+
+        return new Response(JSON.stringify({ ok: true, path: url }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    };
+
+    try {
+        const client = new FetchClient({ baseURL: 'https://api.test' });
+        const auth = await createAuthPlugin(client, {
+            tokenRefreshUrl: '/auth/refresh',
+            storage: 'memory',
+            retryAfterRefresh: true,
+        });
+
+        await auth.setTokens({
+            accessToken: 'old',
+            refreshToken: 'refresh-token',
+        });
+
+        const [a, b, c] = await Promise.all([
+            client.get<{ ok: boolean }>('/protected/a'),
+            client.get<{ ok: boolean }>('/protected/b'),
+            client.get<{ ok: boolean }>('/protected/c'),
+        ]);
+
+        if (!a.data.ok || !b.data.ok || !c.data.ok) {
+            throw new Error('All parallel retries should succeed');
+        }
+
+        if (refreshCalls !== 1) {
+            throw new Error(`Expected exactly 1 refresh call, got ${refreshCalls}`);
+        }
+
+        if (protectedCalls !== 6) {
+            throw new Error(`Expected 6 protected calls (3×401 + 3×retry), got ${protectedCalls}`);
+        }
+
+        console.log('✅ Parallel 401: 1 refresh, 3 retries succeeded');
+        console.log(`   refreshCalls=${refreshCalls}, protectedCalls=${protectedCalls}`);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+}
+
 async function run() {
     await test401RetryAfterRefresh();
     await test401NoRetryWhenDisabled();
+    await testDuplicateCreateAuthPlugin();
+    await testParallel401SingleRefreshWave();
     console.log('\n🎉 Auth 401 retry tests passed');
 }
 

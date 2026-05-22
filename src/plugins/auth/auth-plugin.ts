@@ -13,11 +13,18 @@ import type {
 } from './types';
 import { AuthManager } from './auth-manager';
 
+/** One auth plugin per FetchClient — prevents duplicate interceptors */
+const authPluginsByClient = new WeakMap<FetchClientLike, AuthPlugin>();
+
 export class AuthPlugin {
     readonly name = 'auth';
 
     private authInterceptor: ReturnType<AuthManager['createAuthInterceptor']> | null = null;
     private removeAuthErrorInterceptor?: () => void;
+
+    /** Coordinates parallel 401s: single refresh, then each caller retries */
+    private recoveryPromise: Promise<boolean> | null = null;
+    private recoveryWaiters = 0;
 
     private constructor(
         private readonly client: FetchClientLike,
@@ -26,9 +33,25 @@ export class AuthPlugin {
     ) {}
 
     static async create(client: FetchClientLike, config: AuthConfig): Promise<AuthPlugin> {
+        const existing = authPluginsByClient.get(client);
+        if (existing) {
+            if (config.debug) {
+                console.warn(
+                    '[AuthPlugin] Plugin already registered on this FetchClient — reusing existing instance. Call teardown() first to replace.'
+                );
+            }
+            return existing;
+        }
+
         const plugin = new AuthPlugin(client, new AuthManager(config, config.debug ?? false), config);
         await plugin.init();
+        authPluginsByClient.set(client, plugin);
         return plugin;
+    }
+
+    /** Returns the plugin bound to a client, if any */
+    static getForClient(client: FetchClientLike): AuthPlugin | undefined {
+        return authPluginsByClient.get(client);
     }
 
     private async init(): Promise<void> {
@@ -58,43 +81,68 @@ export class AuthPlugin {
             return error;
         }
 
-        const refreshToken = this.manager.getTokens()?.refreshToken;
-        if (!refreshToken || !this.config.tokenRefreshUrl) {
-            await this.manager.handleUnauthorized(this.createRefreshRequestFn());
+        const recovered = await this.runUnauthorizedRecoveryWave();
+        if (!recovered) {
             return error;
         }
-
-        try {
-            await this.manager.refreshTokens(this.createRefreshRequestFn());
-        } catch {
-            return error;
-        }
-
-        if (!this.manager.isAuthenticated()) {
-            return error;
-        }
-
-        this.attachAuthInterceptor();
 
         if (this.config.retryAfterRefresh === false) {
             return error;
         }
 
-        const retryResponse = await this.client.request(
-            context.method,
-            context.path,
-            {
-                ...context.config,
-                meta: {
-                    ...context.config.meta,
-                    path: context.path,
-                    method: context.method,
-                    authRetried: true,
-                },
-            }
-        );
+        return this.retryRequest(context);
+    }
 
-        return retryResponse;
+    /**
+     * Parallel 401s share one refresh; each waiter retries after the wave completes.
+     */
+    private async runUnauthorizedRecoveryWave(): Promise<boolean> {
+        this.recoveryWaiters++;
+
+        if (!this.recoveryPromise) {
+            this.recoveryPromise = this.executeUnauthorizedRecovery();
+        }
+
+        try {
+            return await this.recoveryPromise;
+        } finally {
+            this.recoveryWaiters--;
+            if (this.recoveryWaiters === 0) {
+                this.recoveryPromise = null;
+            }
+        }
+    }
+
+    private async executeUnauthorizedRecovery(): Promise<boolean> {
+        const refreshToken = this.manager.getTokens()?.refreshToken;
+
+        if (!refreshToken || !this.config.tokenRefreshUrl) {
+            await this.manager.handleUnauthorized(this.createRefreshRequestFn());
+            return false;
+        }
+
+        try {
+            await this.manager.refreshTokens(this.createRefreshRequestFn());
+            if (!this.manager.isAuthenticated()) {
+                return false;
+            }
+            this.attachAuthInterceptor();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private retryRequest(context: ErrorInterceptorContext): Promise<FetchResponse> {
+        return this.client.request(context.method, context.path, {
+            ...context.config,
+            meta: {
+                ...context.config.meta,
+                path: context.path,
+                method: context.method,
+                authRetried: true,
+            },
+        });
     }
 
     async login<T = unknown>(credentials: LoginCredentials): Promise<FetchResponse<T>> {
@@ -175,6 +223,9 @@ export class AuthPlugin {
         this.detachAuthInterceptor();
         this.removeAuthErrorInterceptor?.();
         this.removeAuthErrorInterceptor = undefined;
+        authPluginsByClient.delete(this.client);
+        this.recoveryPromise = null;
+        this.recoveryWaiters = 0;
     }
 
     private attachAuthInterceptor(): void {

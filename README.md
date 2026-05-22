@@ -243,7 +243,7 @@ await auth.logout();
 | `refreshTokens()` | Manual refresh |
 | `getAuthState()` / `setUser()` / `getUser()` | User + state |
 
-On **401**, if a refresh token exists, the plugin refreshes and **retries the original request once** (`retryAfterRefresh: true` by default). Set `retryAfterRefresh: false` to refresh only without retrying.
+On **401**, if a refresh token exists, the plugin refreshes and **retries the original request once** (`retryAfterRefresh: true` by default). Parallel 401s share **one refresh wave**, then each failed request retries. `createAuthPlugin` is **singleton per client** — calling it twice returns the same instance (call `teardown()` to replace).
 
 ### Cookie utilities
 
