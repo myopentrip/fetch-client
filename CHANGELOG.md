@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **401 recovery wave:** parallel 401 responses share a single refresh (`recoveryPromise` + waiter refcount), then each failed request retries on its own.
 - **Vitest** as the formal test runner (`vitest.config.ts`, `pnpm test`, `pnpm run test:watch`, `pnpm run test:coverage`).
 - Vitest suites under `tests/*.test.ts`: auth (helpers + memory storage), auth 401 retry, SSL utilities/plugin, upload validators/formatters, `FetchClient` (interceptors, retry, abort), and request helpers — all using mocked `fetch` (no external HTTP).
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs `pnpm run build` and `pnpm test` on push/PR to `main` (Node.js 24; `actions/checkout@v6`, `pnpm/action-setup@v6`, `actions/setup-node@v6`).
 
 ### Changed
 
