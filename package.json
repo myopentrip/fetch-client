@@ -54,6 +54,9 @@
   ],
   "author": "Bliss Jaspis",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "pnpm@10.12.1",
   "devDependencies": {
     "@types/node": "^24.12.4",
