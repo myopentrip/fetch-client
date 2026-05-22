@@ -35,11 +35,9 @@
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "pnpm run clean && pnpm run build",
-    "test:interceptors": "npx tsx tests/interceptor-test.ts",
-    "test:auth": "npx tsx tests/auth-test.ts",
-    "test:auth:401": "npx tsx tests/auth-401-retry-test.ts",
-    "test:upload": "npx tsx tests/file-upload-test.ts",
-    "test:ssl": "npx tsx tests/ssl-error-test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "example:interceptors": "npx tsx examples/interceptor-examples.ts",
     "example:ssl": "npx tsx examples/ssl-error-examples.ts",
     "example:errors": "npx tsx examples/enhanced-error-examples.ts"
@@ -61,7 +59,8 @@
   "devDependencies": {
     "@types/node": "^24.12.4",
     "tsup": "^8.5.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   },
   "repository": {
     "type": "git",

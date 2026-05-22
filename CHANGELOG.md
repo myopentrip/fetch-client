@@ -12,12 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auth plugin singleton:** calling `createAuthPlugin` twice on the same `FetchClient` returns the existing instance instead of registering duplicate interceptors.
 - **`AuthPlugin.getForClient(client)`** — check whether a client already has an auth plugin registered.
 - **401 recovery wave:** parallel 401 responses share a single refresh (`recoveryPromise` + waiter refcount), then each failed request retries on its own.
-- Tests in `test:auth:401` for duplicate `createAuthPlugin` and parallel 401 refresh behavior.
+- **Vitest** as the formal test runner (`vitest.config.ts`, `pnpm test`, `pnpm run test:watch`, `pnpm run test:coverage`).
+- Vitest suites under `tests/*.test.ts`: auth (helpers + memory storage), auth 401 retry, SSL utilities/plugin, upload validators/formatters, `FetchClient` (interceptors, retry, abort), and request helpers — all using mocked `fetch` (no external HTTP).
 
 ### Changed
 
 - **`auth.teardown()`** now unregisters the plugin from the client (`WeakMap`) so a new plugin can be attached afterward.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** translated to English and updated with singleton + recovery wave behavior.
+- **README** and **[docs/PUBLISHING.md](docs/PUBLISHING.md)** — test instructions now use `pnpm test` instead of per-script `tsx` runners.
+
+### Removed
+
+- Manual `npx tsx tests/*-test.ts` scripts (`test:interceptors`, `test:auth`, `test:auth:401`, `test:upload`, `test:ssl`) and the old demo/integration test files that depended on httpbin, jsonplaceholder, or live badssl endpoints.
 
 ---
 

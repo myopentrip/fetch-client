@@ -75,8 +75,7 @@ Use this for every release:
 
   ```bash
   pnpm run build
-  pnpm run test:interceptors
-  pnpm run test:ssl
+  pnpm test
   ```
 
 - [ ] **Dry-run** publish succeeds and the file list looks correct (see below).
@@ -252,8 +251,7 @@ Example GitHub Actions flow:
 # Prepare
 pnpm install
 pnpm run build
-pnpm run test:interceptors
-pnpm run test:ssl
+pnpm test
 
 # Version (example: patch)
 npm version patch

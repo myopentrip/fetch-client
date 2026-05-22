@@ -415,8 +415,8 @@ Plugin APIs are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```bash
 pnpm run build
-pnpm run test:interceptors
-pnpm run test:ssl
+pnpm test
+pnpm run test:watch
 pnpm run example:interceptors
 ```
 
