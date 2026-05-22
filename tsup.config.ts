@@ -8,7 +8,12 @@ export default defineConfig({
         ssl: 'src/ssl.ts',
     },
     format: ['cjs', 'esm'],
-    dts: true,
+    dts: {
+        compilerOptions: {
+            // tsup injects baseUrl: "." for DTS; only TS 6 accepts ignoreDeprecations: "6.0"
+            ignoreDeprecations: '6.0',
+        },
+    },
     splitting: false,
     sourcemap: true,
     clean: true,
