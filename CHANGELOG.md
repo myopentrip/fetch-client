@@ -15,16 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vitest** as the formal test runner (`vitest.config.ts`, `pnpm test`, `pnpm run test:watch`, `pnpm run test:coverage`).
 - Vitest suites under `tests/*.test.ts`: auth (helpers + memory storage), auth 401 retry, SSL utilities/plugin, upload validators/formatters, `FetchClient` (interceptors, retry, abort), and request helpers — all using mocked `fetch` (no external HTTP).
 - **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs `pnpm run build` and `pnpm test` on push/PR to `main` (Node.js 24; `actions/checkout@v6`, `pnpm/action-setup@v6`, `actions/setup-node@v6`).
+- **[SKILL.md](SKILL.md)** — Cursor agent skill for v3 (`fetch-client-development`): when to use, import paths, plugin setup order, core/auth/upload/SSL patterns, v2 migration notes, common mistakes, and local `pnpm run example:*` verification.
 
 ### Changed
 
 - **`auth.teardown()`** now unregisters the plugin from the client (`WeakMap`) so a new plugin can be attached afterward.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** translated to English and updated with singleton + recovery wave behavior.
 - **README** and **[docs/PUBLISHING.md](docs/PUBLISHING.md)** — test instructions now use `pnpm test` instead of per-script `tsx` runners.
+- **Examples:** [`examples/README.md`](examples/README.md) developer guide (learning path + feature coverage map); `pnpm run example:*` for each demo; `tsx` dev dependency; new tutorials `core-patterns`, `combined-plugins`, `auth-lifecycle`, `auth-401-retry`, `http-errors`; v3 runners and interceptor timing demo.
 
 ### Removed
 
-- Manual `npx tsx tests/*-test.ts` scripts (`test:interceptors`, `test:auth`, `test:auth:401`, `test:upload`, `test:ssl`) and the old demo/integration test files that depended on httpbin, jsonplaceholder, or live badssl endpoints.
+- Manual `npx tsx tests/*-test.ts` scripts and old demo/integration test files that depended on httpbin, jsonplaceholder, or live badssl endpoints.
+- Broken `example:errors` entry for missing `enhanced-error-examples.ts`.
 
 ---
 

@@ -1,5 +1,6 @@
 /**
  * Auth plugin examples (v3)
+ * Run: pnpm run example:auth — runs offline `manualTokens`; uncomment flows for a real API
  */
 import { FetchClient } from '../src/index';
 import {
@@ -67,6 +68,12 @@ async function manualTokens() {
     console.log('User from JWT:', user);
 }
 
-export { basicAuthSetup, authenticationFlow, manualTokens };
+async function run() {
+    console.log('Auth plugin — offline demo\n');
+    await manualTokens();
+    console.log('\nℹ️  For login/refresh/logout against a real API, call authenticationFlow() in this file.');
+}
 
-// authenticationFlow().catch(console.error);
+void run().catch(console.error);
+
+export { basicAuthSetup, authenticationFlow, manualTokens };

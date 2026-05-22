@@ -1,5 +1,6 @@
 /**
- * SSL plugin examples (v3)
+ * SSL plugin examples (v3) — requires https://badssl.com
+ * Run: pnpm run example:ssl
  */
 import { FetchClient } from '../src/index';
 import {
@@ -56,6 +57,6 @@ async function manualInterceptor() {
     }
 }
 
-export { defaultSSLHandling, customSSLPlugin, manualInterceptor };
+void defaultSSLHandling().catch(console.error);
 
-// defaultSSLHandling().catch(console.error);
+export { defaultSSLHandling, customSSLPlugin, manualInterceptor };

@@ -1,5 +1,6 @@
 /**
- * Cookie auth examples (v3) — utilities and auth plugin from @myopentrip/fetch-client/auth
+ * Cookie auth utilities + plugin config (v3)
+ * Run: pnpm run example:cookie
  */
 import { FetchClient } from '../src/index';
 import {
@@ -53,5 +54,12 @@ async function cookieUtilities() {
     storage.setItem('key', 'value');
     console.log('Storage:', storage.getItem('key'));
 }
+
+async function run() {
+    console.log('Cookie utilities (browser-oriented; limited in Node)\n');
+    await cookieUtilities();
+}
+
+void run().catch(console.error);
 
 export { cookieStorageAuth, cookieUtilities };

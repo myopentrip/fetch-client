@@ -1,4 +1,7 @@
-// Advanced fetch-client example showcasing the 3 critical features
+/**
+ * Core: cancellation, interceptors, retry
+ * Run: pnpm run example:advanced
+ */
 
 import { 
   FetchClient, 
@@ -76,7 +79,7 @@ async function demonstrateNewFeatures() {
   const removeCustomHeaderInterceptor = advancedClient.addRequestInterceptor((config) => {
     config.headers = {
       ...config.headers,
-      'X-Client-Version': '2.0.0',
+      'X-Client-Version': '3.0.0',
       'X-Request-ID': `req-${Date.now()}`,
     };
     return config;
@@ -232,7 +235,6 @@ async function demonstrateNewFeatures() {
   console.log('\n✨ All demonstrations completed!');
 }
 
-// Uncomment to run the demonstration
-// demonstrateNewFeatures().catch(console.error);
+void demonstrateNewFeatures().catch(console.error);
 
 export { demonstrateNewFeatures };

@@ -1,4 +1,7 @@
-// Comprehensive Interceptor Examples for @myopentrip/fetch-client
+/**
+ * Core interceptors cookbook (live requests to jsonplaceholder.typicode.com)
+ * Run: pnpm run example:interceptors
+ */
 import { 
     FetchClient, 
     createAuthInterceptor, 
@@ -56,7 +59,7 @@ async function demonstrateInterceptors() {
             ...config.headers,
             'Accept': 'application/vnd.api+json',
             'API-Version': 'v2',
-            'Client-Version': '2.4.1'
+            'Client-Version': '3.0.0'
         };
         return config;
     });
@@ -190,6 +193,10 @@ async function demonstrateInterceptors() {
     console.log('\n7️⃣ Performance Monitoring');
     console.log('-------------------------');
 
+    const timing = createTimingInterceptor();
+    const removeTimingRequest = client.addRequestInterceptor(timing.request);
+    const removeTimingResponse = client.addResponseInterceptor(timing.response);
+
     const performanceData = new Map<string, number>();
 
     const removePerformanceInterceptor = client.addRequestInterceptor((config: RequestConfig) => {
@@ -232,7 +239,7 @@ async function demonstrateInterceptors() {
                 
                 // Add metadata to all requests
                 data._metadata = {
-                    clientVersion: '2.4.1',
+                    clientVersion: '3.0.0',
                     timestamp: new Date().toISOString(),
                     source: 'fetch-client'
                 };
@@ -309,6 +316,8 @@ async function demonstrateInterceptors() {
     removeCacheInterceptor();
     removeErrorMonitoringInterceptor();
     removeRetryInterceptor();
+    removeTimingRequest();
+    removeTimingResponse();
     removePerformanceInterceptor();
     removePerformanceResponseInterceptor();
     removeTransformInterceptor();
@@ -384,11 +393,11 @@ export function createResponseValidationInterceptor<T>(validator: (data: T) => b
     };
 }
 
-// Run the demo
-if (require.main === module) {
-    demonstrateInterceptors().catch(console.error);
-}
+void demonstrateInterceptors().catch(console.error);
 
-export { 
-    demonstrateInterceptors
+export {
+    demonstrateInterceptors,
+    createRateLimitInterceptor,
+    createRequestSizeInterceptor,
+    createResponseValidationInterceptor,
 };

@@ -1,4 +1,7 @@
-// Example usage of the fetch-client package
+/**
+ * Core usage: CRUD, factory, generics
+ * Run: pnpm run example
+ */
 import { FetchClient, createFetchClient } from '../src/index';
 
 async function examples() {
@@ -69,5 +72,4 @@ async function examples() {
   console.log('First user name:', typedUsers.data[0].name);
 }
 
-// Uncomment to run examples
-// examples().catch(console.error);
+void examples().catch(console.error);

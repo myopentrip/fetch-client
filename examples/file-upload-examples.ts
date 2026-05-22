@@ -1,5 +1,6 @@
 /**
- * Upload plugin examples (v3)
+ * Upload plugin examples (v3) — requires https://httpbin.org
+ * Run: pnpm run example:upload
  */
 import { FetchClient, formatUploadSpeed, formatTimeRemaining } from '../src/index';
 import {
@@ -49,5 +50,14 @@ async function validateBeforeUpload() {
     });
     if (!result.valid) throw new Error(result.error);
 }
+
+async function run() {
+    await validateBeforeUpload();
+    console.log('✅ validateBeforeUpload passed\n');
+    console.log('Uploading to httpbin.org…');
+    await basicUploads();
+}
+
+void run().catch(console.error);
 
 export { basicUploads, uploadWithProgress, validateBeforeUpload };

@@ -1,5 +1,7 @@
 # Fetch Client
 
+[![CI](https://github.com/myopentrip/fetch-client/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/myopentrip/fetch-client/actions/workflows/ci.yml)
+
 A lightweight, TypeScript-first HTTP client on the native Fetch API — with optional plugins for auth, uploads, and SSL errors.
 
 > **v3** splits a small **core** from optional **plugins**. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design and migration from v2.
@@ -411,13 +413,23 @@ interface FetchResponse<T> {
 
 Plugin APIs are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Examples
+
+Runnable tutorials live in [`examples/`](examples/). See [`examples/README.md`](examples/README.md) for a **learning path**, feature coverage map, and how examples differ from tests.
+
+```bash
+pnpm run example:core         # meta, PATCH, FetchError (offline)
+pnpm run example:combined     # auth + upload + SSL on one client (offline)
+pnpm run example:auth:401     # 401 → refresh → retry (offline)
+pnpm run example              # core CRUD (needs network)
+```
+
 ## Scripts
 
 ```bash
 pnpm run build
 pnpm test
 pnpm run test:watch
-pnpm run example:interceptors
 ```
 
 

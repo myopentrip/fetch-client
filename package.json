@@ -38,9 +38,18 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "example:interceptors": "npx tsx examples/interceptor-examples.ts",
-    "example:ssl": "npx tsx examples/ssl-error-examples.ts",
-    "example:errors": "npx tsx examples/enhanced-error-examples.ts"
+    "example": "tsx examples/example.ts",
+    "example:core": "tsx examples/core-patterns-example.ts",
+    "example:combined": "tsx examples/combined-plugins-example.ts",
+    "example:advanced": "tsx examples/advanced-example.ts",
+    "example:interceptors": "tsx examples/interceptor-examples.ts",
+    "example:auth": "tsx examples/auth-examples.ts",
+    "example:auth:401": "tsx examples/auth-401-retry-example.ts",
+    "example:auth:lifecycle": "tsx examples/auth-lifecycle-example.ts",
+    "example:cookie": "tsx examples/cookie-auth-examples.ts",
+    "example:upload": "tsx examples/file-upload-examples.ts",
+    "example:ssl": "tsx examples/ssl-error-examples.ts",
+    "example:errors": "tsx examples/http-errors-example.ts"
   },
   "keywords": [
     "fetch",
@@ -59,6 +68,7 @@
   "devDependencies": {
     "@types/node": "^24.12.4",
     "tsup": "^8.5.1",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
   },
