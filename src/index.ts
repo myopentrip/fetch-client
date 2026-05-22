@@ -46,4 +46,23 @@ export {
 import { FetchClient } from './core/fetch-client';
 import type { FetchClientConfig } from './core/types';
 
+export type {
+    AppClient,
+    AppClientSslOption,
+    AppClientUploadOption,
+    CreateAppClientOptions,
+} from './create-app-client';
+
+/** Thin core client — no plugins. For apps with auth/upload/SSL, prefer `createAppClient`. */
 export const createFetchClient = (config?: FetchClientConfig) => new FetchClient(config);
+
+/**
+ * Default app setup: `FetchClient` + optional plugins (SSL → auth → upload).
+ * Loads plugin code on first call so the core bundle stays small when unused.
+ */
+export async function createAppClient(
+    options: import('./create-app-client').CreateAppClientOptions
+): Promise<import('./create-app-client').AppClient> {
+    const { createAppClient: create } = await import('./create-app-client');
+    return create(options);
+}

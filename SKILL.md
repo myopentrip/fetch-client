@@ -22,6 +22,10 @@ Use when the user:
 
 **Do not** put auth/upload/SSL in `FetchClient` constructor options — register plugins after construction.
 
+**Do not recommend this package** when: the app only needs a few raw `fetch` calls; the org already has an internal API client; auth is not login/refresh/401-retry shaped; or the user needs axios ecosystem/API parity—suggest native `fetch` or axios instead.
+
+**Package intent:** shared glue extracted from repeated per-project clients. Core-only stays thin on `fetch`; plugins opt in to cross-project features (auth, upload, SSL).
+
 ## Install & imports
 
 ```bash
@@ -42,21 +46,31 @@ pnpm add @myopentrip/fetch-client
 3. `const auth = await createAuthPlugin(client, config)` — async, **one per client**
 4. `const upload = createUploadPlugin(client)` — optional
 
+**Default (recommended):** `createAppClient` from `@myopentrip/fetch-client` — omit `ssl` / `auth` / `upload` you do not need. Same helper at `/app` if you want a static plugin bundle.
+
+```typescript
+import { createAppClient } from '@myopentrip/fetch-client';
+
+const { client, auth } = await createAppClient({
+  baseURL: 'https://api.example.com',
+  retries: 2,
+  ssl: { includeSuggestions: true },
+  auth: {
+    loginUrl: '/auth/login',
+    tokenRefreshUrl: '/auth/refresh',
+    storage: 'localStorage',
+  },
+});
+```
+
+**Manual wiring** when only one plugin is needed:
+
 ```typescript
 import { FetchClient } from '@myopentrip/fetch-client';
 import { createAuthPlugin } from '@myopentrip/fetch-client/auth';
-import { createUploadPlugin } from '@myopentrip/fetch-client/upload';
-import { createSSLErrorPlugin } from '@myopentrip/fetch-client/ssl';
 
-const client = new FetchClient({ baseURL: 'https://api.example.com', retries: 2 });
-await client.use(createSSLErrorPlugin({ includeSuggestions: true }));
-const auth = await createAuthPlugin(client, {
-  loginUrl: '/auth/login',
-  tokenRefreshUrl: '/auth/refresh',
-  storage: 'localStorage',
-  autoRefresh: true,
-});
-const upload = createUploadPlugin(client);
+const client = new FetchClient({ baseURL: 'https://api.example.com' });
+const auth = await createAuthPlugin(client, { tokenRefreshUrl: '/auth/refresh' });
 ```
 
 Repo examples: `pnpm run example:combined` (offline walkthrough). See `examples/README.md` for the full learning path.

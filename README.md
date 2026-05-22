@@ -6,6 +6,49 @@ A lightweight, TypeScript-first HTTP client on the native Fetch API — with opt
 
 > **v3** splits a small **core** from optional **plugins**. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design and migration from v2.
 
+## Why this package exists
+
+This library was extracted from code repeated across multiple projects: base URL + headers, typed JSON responses, retry, interceptors, auth headers, 401 refresh, uploads, and clearer TLS errors. The goal is **one maintained implementation** of that glue—not a replacement for `fetch` or `axios` in every situation.
+
+## When to use it
+
+| Situation | Suggestion |
+|-----------|------------|
+| Several apps share similar REST auth (login, refresh, 401 retry) | **Auth plugin** — avoids reimplementing refresh waves and duplicate interceptors |
+| You want **native `fetch`** (Edge, Workers, modern Node) with a small typed wrapper | **Core only** — stays close to the platform API |
+| You need multipart uploads + optional progress without pulling in axios | **Upload plugin** |
+| You want friendlier certificate/TLS error copy in dev or support tooling | **SSL plugin** (opt-in) |
+| Your team already copies the same `api.ts` into every repo | This package is the shared version of that file |
+
+**Core-only usage is intentionally thin:** `FetchClient` adds config, helpers, and interceptors on top of `fetch`—not a second HTTP stack.
+
+## When not to use it
+
+| Situation | Better choice |
+|-----------|----------------|
+| A few `fetch` calls with no shared client | **Native `fetch`** |
+| Your org already has an internal API client | **Keep your internal package** — conventions beat another dependency |
+| Auth does not match login + refresh token + 401 retry (OAuth device flow, mTLS, cookie-only sessions, etc.) | **Custom client** or extend via interceptors; the auth plugin may fight you |
+| You need axios-specific APIs (`transformRequest`, adapters, legacy cancel tokens) | **axios** |
+| You want maximum ecosystem docs, hiring familiarity, and “no debate” | **axios** — this package will not beat that on popularity |
+| You only need upload progress occasionally | **XHR/fetch in one place** in the app may be simpler than a plugin |
+
+Being explicit about these cases is intentional—we would rather you use `fetch` or axios when that is the right fit.
+
+## Thin like `fetch`, familiar like common clients
+
+You do **not** have to choose “minimal fetch” **or** “batteries included” for the whole package:
+
+- **Core** (`@myopentrip/fetch-client`) — thin layer: `baseURL`, headers, timeout, `AbortSignal`, retry, interceptors, typed `{ data, status, meta }`. Still `fetch` under the hood.
+- **Plugins** (`/auth`, `/upload`, `/ssl`) — optional; import only what you need (tree-shakeable subpaths).
+
+This is **not** an axios clone. It does not aim for API parity or the same ecosystem footprint. It aims for:
+
+- **Platform standard:** `fetch`, `RequestInit`, `Headers`, `AbortSignal`
+- **Pattern familiarity:** interceptors and a configurable client instance (similar to axios-style apps, without a second transport)
+
+So: **as thin as you make it** (core-only ≈ the wrapper you would have copied anyway), **as heavy as you opt in** (plugins for repeated cross-project work). It will not replace axios as the industry default—and that is fine for its purpose.
+
 ## Features
 
 ### Core (`@myopentrip/fetch-client`)
@@ -25,6 +68,7 @@ A lightweight, TypeScript-first HTTP client on the native Fetch API — with opt
 | Auth | `@myopentrip/fetch-client/auth` | Login, tokens, storage, 401 refresh |
 | Upload | `@myopentrip/fetch-client/upload` | Multipart upload, progress (XHR) |
 | SSL | `@myopentrip/fetch-client/ssl` | User-friendly certificate error messages |
+| App factory | `@myopentrip/fetch-client` or `/app` | `createAppClient` — default app setup (main entry loads plugins on first call) |
 
 ## Installation
 
@@ -36,23 +80,59 @@ Auth, upload, and SSL ship in the same package — import only what you need.
 
 ## Quick start
 
-### Core only
+### Default — `createAppClient`
+
+One call wires the client and any plugins you need (SSL → auth → upload). Omit plugin keys you do not use.
 
 ```typescript
-import { FetchClient } from '@myopentrip/fetch-client';
+import { createAppClient } from '@myopentrip/fetch-client';
 
-const client = new FetchClient({
+const { client, auth } = await createAppClient({
   baseURL: 'https://api.example.com',
   timeout: 10_000,
-  retries: 2,
-  headers: { Accept: 'application/json' },
+  auth: {
+    loginUrl: '/auth/login',
+    tokenRefreshUrl: '/auth/refresh',
+    storage: 'localStorage',
+  },
 });
 
-const { data } = await client.get<User[]>('/users');
-await client.post('/users', { name: 'Ada' });
+await auth?.login({ email: 'user@example.com', password: 'secret' });
+const { data } = await client.get<{ id: string }>('/me');
 ```
 
-### With plugins
+With every plugin:
+
+```typescript
+const { client, auth, upload } = await createAppClient({
+  baseURL: 'https://api.example.com',
+  retries: 2,
+  ssl: true,
+  auth: { tokenRefreshUrl: '/auth/refresh', storage: 'localStorage' },
+  upload: true,
+});
+```
+
+`createAppClient` is also exported from `@myopentrip/fetch-client/app` if you prefer a single static file without lazy chunks.
+
+### Core only (no plugins)
+
+Use when you want a thin `fetch` wrapper with no auth, upload, or SSL:
+
+```typescript
+import { FetchClient, createFetchClient } from '@myopentrip/fetch-client';
+
+const client = createFetchClient({
+  baseURL: 'https://api.example.com',
+  timeout: 10_000,
+});
+
+const { data } = await client.get<{ id: string }>('/me');
+```
+
+### Manual plugin wiring
+
+Use when you need a single plugin or full control over setup order.
 
 ```typescript
 import { FetchClient } from '@myopentrip/fetch-client';
@@ -77,6 +157,8 @@ const profile = await client.get('/user/profile');
 const upload = createUploadPlugin(client);
 await upload.uploadFile('/files', { file: document.querySelector('input').files[0] });
 ```
+
+Full walkthrough with mocks: `pnpm run example:combined`.
 
 ## Core usage
 

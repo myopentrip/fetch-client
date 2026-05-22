@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`createAppClient`** — factory that creates `FetchClient` and wires SSL → auth → upload in the recommended order (sugar only, no new HTTP behavior). Exported from `@myopentrip/fetch-client` (lazy-loaded chunks) and `@myopentrip/fetch-client/app` (static).
+
+### Changed
+
+- **README** — `createAppClient` is the default quick start; core-only and manual wiring are explicit alternatives; transparent “When to use / When not to use” and design stance.
+- **`createFetchClient`** documented as thin core-only; apps with plugins should prefer `createAppClient`.
+- **Build** — `splitting: true` so the main entry stays small when only `FetchClient` / `createFetchClient` is used; plugin code loads when `createAppClient` runs.
+
 ---
 
 ## [3.1.0] - 2026-05-23

@@ -25,6 +25,11 @@
       "types": "./dist/ssl.d.ts",
       "import": "./dist/ssl.mjs",
       "require": "./dist/ssl.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.mjs",
+      "require": "./dist/app.js"
     }
   },
   "files": [

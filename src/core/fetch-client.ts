@@ -4,7 +4,6 @@ import type {
     FetchClientPlugin,
     RequestConfig,
     FetchResponse,
-    FetchError,
     HttpMethod,
     RequestInterceptor,
     ResponseInterceptor,

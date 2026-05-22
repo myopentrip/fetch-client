@@ -3,6 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
     entry: {
         index: 'src/index.ts',
+        app: 'src/app.ts',
         auth: 'src/auth.ts',
         upload: 'src/upload.ts',
         ssl: 'src/ssl.ts',
@@ -14,7 +15,7 @@ export default defineConfig({
             ignoreDeprecations: '6.0',
         },
     },
-    splitting: false,
+    splitting: true,
     sourcemap: true,
     clean: true,
     minify: false,
