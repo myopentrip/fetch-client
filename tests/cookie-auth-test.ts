@@ -1,6 +1,7 @@
 // Quick test to verify cookie authentication functionality
-import { 
-    FetchClient,
+import { FetchClient } from '../src/index';
+import {
+    createAuthPlugin,
     createAuthConfig,
     createCookieStorage,
     createSecureCookieStorage,
@@ -10,8 +11,8 @@ import {
     setCookie,
     removeCookie,
     getAllCookies,
-    type AuthTokens
-} from '../src/index';
+    type AuthTokens,
+} from '../src/auth';
 
 async function testCookieAuthFeatures() {
     console.log('🍪 Testing Cookie Authentication Features\n');
@@ -142,33 +143,33 @@ async function testCookieAuthFeatures() {
     const client = new FetchClient({
         baseURL: 'https://httpbin.org',
         debug: true,
-        auth: authConfig
     });
-    
-    console.log('✅ Cookie auth client created');
-    
-    // Test token management
+
+    const auth = await createAuthPlugin(client, authConfig);
+    console.log('✅ Cookie auth plugin created');
+
     const mockTokens: AuthTokens = {
         accessToken: 'test-access-token',
         refreshToken: 'test-refresh-token',
         expiresIn: 3600,
-        tokenType: 'Bearer'
+        tokenType: 'Bearer',
     };
-    
+
     try {
-        await client.setTokens(mockTokens);
+        await auth.setTokens(mockTokens);
         console.log('✅ Tokens set in cookies');
-        
-        const retrievedTokens = client.getTokens();
+
+        const retrievedTokens = auth.getTokens();
         if (retrievedTokens) {
-            console.log('✅ Tokens retrieved from cookies:', 
-                retrievedTokens.accessToken === mockTokens.accessToken);
+            console.log(
+                '✅ Tokens retrieved from cookies:',
+                retrievedTokens.accessToken === mockTokens.accessToken
+            );
         }
-        
-        console.log('✅ Auth state:', client.isAuthenticated());
-        
-        // Clean up
-        await client.clearTokens();
+
+        console.log('✅ Auth state:', auth.isAuthenticated());
+
+        await auth.clearTokens();
         console.log('✅ Cookie tokens cleared');
         
     } catch (error) {

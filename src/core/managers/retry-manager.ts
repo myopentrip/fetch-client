@@ -1,4 +1,5 @@
-import type { RetryConfig, FetchError } from '../types';
+import type { RetryConfig, FetchError, FetchResponse } from '../types';
+import { isRecoveredResponse } from './interceptor-manager';
 
 export class RetryManager {
     private config: RetryConfig;
@@ -52,7 +53,7 @@ export class RetryManager {
     async executeWithRetry<T>(
         fn: () => Promise<T>,
         context?: string,
-        onFinalError?: (error: FetchError) => Promise<FetchError>
+        onFinalError?: (error: FetchError) => Promise<FetchError | FetchResponse<unknown>>
     ): Promise<T> {
         let lastError: FetchError | undefined;
 
@@ -78,7 +79,11 @@ export class RetryManager {
         }
 
         if (lastError && onFinalError) {
-            lastError = await onFinalError(lastError);
+            const result = await onFinalError(lastError);
+            if (isRecoveredResponse(result)) {
+                return result as T;
+            }
+            lastError = result;
         }
 
         throw lastError ?? new Error('Request failed with unknown error');

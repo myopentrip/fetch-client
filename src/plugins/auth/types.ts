@@ -16,6 +16,8 @@ export interface AuthConfig {
     logoutUrl?: string;
     tokenPrefix?: string;
     autoRefresh?: boolean;
+    /** Retry the original request once after a successful token refresh on 401 (default: true) */
+    retryAfterRefresh?: boolean;
     refreshThreshold?: number;
     onTokenRefresh?: (tokens: AuthTokens) => void | Promise<void>;
     onTokenExpired?: () => void | Promise<void>;

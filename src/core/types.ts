@@ -13,6 +13,8 @@ export interface RequestMeta {
     method: HttpMethod;
     /** Set by auth plugin on login/logout/refresh to avoid 401 refresh loops */
     skipAuthRefresh?: boolean;
+    /** Internal: prevents infinite retry after token refresh */
+    authRetried?: boolean;
 }
 
 export interface RequestConfig extends RequestInit {
@@ -45,7 +47,19 @@ export type ResponseInterceptor<T = unknown> = (
     response: FetchResponse<T>
 ) => FetchResponse<T> | Promise<FetchResponse<T>>;
 
-export type ErrorInterceptor = (error: FetchError) => FetchError | Promise<FetchError>;
+export interface ErrorInterceptorContext {
+    method: HttpMethod;
+    path: string;
+    config: RequestConfig;
+}
+
+/** Returning FetchResponse recovers from the error (e.g. retry after 401 refresh) */
+export type ErrorInterceptorResult<T = unknown> = FetchError | FetchResponse<T>;
+
+export type ErrorInterceptor = (
+    error: FetchError,
+    context?: ErrorInterceptorContext
+) => ErrorInterceptorResult | Promise<ErrorInterceptorResult>;
 
 export interface Interceptors {
     request: RequestInterceptor[];

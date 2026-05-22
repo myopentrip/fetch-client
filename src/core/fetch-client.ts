@@ -118,13 +118,12 @@ export class FetchClient implements FetchClientLike {
         const url = this.resolveURL(path);
         const meta = buildRequestMeta(method, path, config.meta);
 
+        const requestConfig: RequestConfig = { ...config, method, meta };
+
         return this.retryManager.executeWithRetry(
             async () => {
-                const interceptedConfig = await this.interceptorManager.applyRequestInterceptors({
-                    ...config,
-                    method,
-                    meta,
-                });
+                const interceptedConfig =
+                    await this.interceptorManager.applyRequestInterceptors(requestConfig);
 
                 const response = await this.requestExecutor.executeRequest<T>(
                     url,
@@ -136,7 +135,12 @@ export class FetchClient implements FetchClientLike {
                 return this.interceptorManager.applyResponseInterceptors(response);
             },
             `${method} ${path}`,
-            (error) => this.interceptorManager.applyErrorInterceptors(error)
+            (error) =>
+                this.interceptorManager.applyErrorInterceptors(error, {
+                    method,
+                    path,
+                    config: requestConfig,
+                })
         );
     }
 

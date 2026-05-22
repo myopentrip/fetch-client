@@ -10,6 +10,11 @@
 - SSL: `await client.use(createSSLErrorPlugin())` from `@myopentrip/fetch-client/ssl`
 - `FetchResponse` now includes required `meta` (`path`, `method`).
 
+### Added
+
+- **401 auto-retry:** after successful token refresh, the failed request is retried once (`retryAfterRefresh`, default `true`).
+- Error interceptors may return `FetchResponse` to recover from errors (powers auth retry).
+
 ### Fixes (carried into v3)
 
 - Auth init is async via `await createAuthPlugin()` (no constructor race).

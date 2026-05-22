@@ -11,6 +11,7 @@ export const createAuthConfig = (config: Partial<AuthConfig> = {}): AuthConfig =
         storage: 'localStorage',
         tokenPrefix: 'Bearer',
         autoRefresh: true,
+        retryAfterRefresh: true,
         refreshThreshold: 300, // 5 minutes
         cookieOptions: {
             path: '/',

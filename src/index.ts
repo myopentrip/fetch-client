@@ -15,6 +15,8 @@ export type {
     RequestInterceptor,
     ResponseInterceptor,
     ErrorInterceptor,
+    ErrorInterceptorContext,
+    ErrorInterceptorResult,
     Interceptors,
     RetryConfig,
 } from './core/types';

@@ -2,11 +2,18 @@ import type {
     RequestInterceptor,
     ResponseInterceptor,
     ErrorInterceptor,
+    ErrorInterceptorContext,
     Interceptors,
     RequestConfig,
     FetchResponse,
     FetchError,
 } from '../types';
+
+export function isRecoveredResponse<T = unknown>(
+    result: FetchError | FetchResponse<T>
+): result is FetchResponse<T> {
+    return typeof result === 'object' && result !== null && 'status' in result && 'data' in result;
+}
 
 export class InterceptorManager {
     private interceptors: Interceptors;
@@ -116,21 +123,28 @@ export class InterceptorManager {
         return modifiedResponse;
     }
 
-    async applyErrorInterceptors(error: FetchError): Promise<FetchError> {
+    async applyErrorInterceptors(
+        error: FetchError,
+        context?: ErrorInterceptorContext
+    ): Promise<FetchError | FetchResponse> {
         if (!this.enabledInterceptors) return error;
 
-        let modifiedError = this.cloneError(error);
+        let current: FetchError | FetchResponse = this.cloneError(error);
 
         for (const interceptor of this.interceptors.error) {
             try {
-                modifiedError = await interceptor(modifiedError);
+                const result = await interceptor(current as FetchError, context);
+                if (isRecoveredResponse(result)) {
+                    return result;
+                }
+                current = result;
             } catch (interceptorError) {
                 if (this.debugMode) this.log('Error interceptor failed', interceptorError);
                 return error;
             }
         }
 
-        return modifiedError;
+        return current as FetchError;
     }
 
     private cloneError(error: FetchError): FetchError {

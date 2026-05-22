@@ -8,19 +8,18 @@
  */
 
 import { FetchClient } from '../src/index';
+import { createSSLErrorPlugin } from '../src/ssl';
 
 async function testRealSSLErrorsWithHandling() {
-    console.log('🧪 Testing Real SSL Errors with Error Handling ENABLED\n');
-    
-    const client = new FetchClient({
-        debug: true,
-        sslErrorHandling: { 
-            enabled: true,
+    console.log('🧪 Testing Real SSL Errors with SSL plugin (v3)\n');
+
+    const client = new FetchClient({ debug: true, timeout: 5000 });
+    await client.use(
+        createSSLErrorPlugin({
             includeTechnicalDetails: true,
-            includeSuggestions: true
-        },
-        timeout: 5000
-    });
+            includeSuggestions: true,
+        })
+    );
 
     const testCases = [
         {
@@ -80,19 +79,20 @@ async function testEnvironmentCompatibility() {
     console.log(`   Has fetch: ${typeof fetch !== 'undefined'}`);
     
     // Test client creation with different SSL configurations
-    const configs = [
-        { name: 'Default SSL handling', config: {} },
-        { name: 'SSL disabled', config: { sslErrorHandling: { enabled: false } } },
-        { name: 'Development mode', config: { debug: true, sslErrorHandling: { includeTechnicalDetails: true } } },
-        { name: 'Production mode', config: { sslErrorHandling: { includeTechnicalDetails: false, includeSuggestions: false } } }
+    const setups = [
+        { name: 'Core only (no SSL plugin)', plugin: false },
+        { name: 'SSL plugin default', plugin: true },
+        { name: 'SSL plugin dev mode', plugin: true, opts: { includeTechnicalDetails: true } },
+        { name: 'SSL plugin production', plugin: true, opts: { includeSuggestions: false } },
     ];
-    
-    for (const { name, config } of configs) {
+
+    for (const { name, plugin, opts } of setups) {
         try {
-            const client = new FetchClient(config);
-            console.log(`   ✅ ${name}: Client created successfully`);
+            const client = new FetchClient({ debug: true });
+            if (plugin) await client.use(createSSLErrorPlugin(opts ?? {}));
+            console.log(`   ✅ ${name}: ready`);
         } catch (error) {
-            console.log(`   ❌ ${name}: Failed to create client - ${error}`);
+            console.log(`   ❌ ${name}: ${error}`);
         }
     }
 }
@@ -100,20 +100,19 @@ async function testEnvironmentCompatibility() {
 async function testUserCustomization() {
     console.log('\n\n🧪 Testing User Customization\n');
     
-    const client = new FetchClient({
-        debug: true,
-        sslErrorHandling: {
-            enabled: true,
+    const client = new FetchClient({ debug: true });
+    await client.use(
+        createSSLErrorPlugin({
             includeTechnicalDetails: true,
             includeSuggestions: true,
             customTransformer: (error) => {
                 console.log('   🔧 Custom transformer called!');
                 error.message = `CUSTOM: ${error.message}`;
-                (error as any).customFlag = true;
+                (error as { customFlag?: boolean }).customFlag = true;
                 return error;
-            }
-        }
-    });
+            },
+        })
+    );
     
     console.log('📋 Testing custom SSL error transformer...');
     

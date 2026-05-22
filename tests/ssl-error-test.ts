@@ -1,6 +1,6 @@
 // SSL Error Handling Tests for @myopentrip/fetch-client
-import { 
-    FetchClient,
+import { FetchClient } from '../src/index';
+import {
     isSSLError,
     analyzeSSLError,
     transformSSLError,
@@ -9,8 +9,9 @@ import {
     createProductionSSLErrorInterceptor,
     shouldRetrySSLError,
     getSSLErrorSuggestions,
-    type FetchError
-} from '../src/index';
+    createSSLErrorPlugin,
+    type FetchError,
+} from '../src/ssl';
 
 async function testSSLErrorHandling() {
     console.log('🧪 Testing SSL Error Handling');
@@ -201,45 +202,27 @@ async function testSSLErrorHandling() {
     console.log(`    First suggestion: "${suggestions[0]?.substring(0, 50)}..."`);
 
     // ===========================================
-    // 6. INTEGRATION TESTS WITH FETCHCLIENT
+    // 6. INTEGRATION WITH FETCHCLIENT (v3 plugin)
     // ===========================================
-    
-    console.log('\n6️⃣ Testing Integration with FetchClient');
+
+    console.log('\n6️⃣ Testing SSL plugin with FetchClient');
     console.log('---------------------------------------');
 
-    // Test default SSL handling enabled
-    const clientWithSSL = new FetchClient({
-        baseURL: 'https://example.com',
-        debug: false
-    });
-    
-    console.log('  ✅ Default SSL handling:');
-    console.log(`    SSL handling enabled by default: ${!clientWithSSL.config || (clientWithSSL as any).config.sslErrorHandling?.enabled !== false}`);
+    const clientWithSSL = new FetchClient({ baseURL: 'https://example.com' });
+    await clientWithSSL.use(createSSLErrorPlugin({ includeSuggestions: true }));
+    console.log('  ✅ SSL plugin registered via client.use()');
 
-    // Test custom SSL configuration
-    const clientCustomSSL = new FetchClient({
-        baseURL: 'https://example.com',
-        debug: true,
-        sslErrorHandling: {
-            enabled: true,
+    const clientCustomSSL = new FetchClient({ baseURL: 'https://example.com', debug: true });
+    await clientCustomSSL.use(
+        createSSLErrorPlugin({
             includeTechnicalDetails: true,
-            includeSuggestions: false
-        }
-    });
-    
-    console.log('  ✅ Custom SSL configuration:');
-    console.log(`    Custom config applied: ${!!(clientCustomSSL as any).config?.sslErrorHandling}`);
+            includeSuggestions: false,
+        })
+    );
+    console.log('  ✅ Custom SSL plugin config applied');
 
-    // Test SSL handling disabled
-    const clientNoSSL = new FetchClient({
-        baseURL: 'https://example.com',
-        sslErrorHandling: {
-            enabled: false
-        }
-    });
-    
-    console.log('  ✅ SSL handling disabled:');
-    console.log(`    SSL handling disabled: ${(clientNoSSL as any).config?.sslErrorHandling?.enabled === false}`);
+    const clientNoSSL = new FetchClient({ baseURL: 'https://example.com' });
+    console.log('  ✅ Client without SSL plugin (raw errors)');
 
     // ===========================================
     // 7. EDGE CASE TESTS

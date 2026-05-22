@@ -8,6 +8,7 @@
  */
 
 import { FetchClient } from '../src/index';
+// SSL plugin intentionally not used — inspect raw Node.js errors
 
 interface NodeSystemError extends Error {
     code?: string;
@@ -22,11 +23,7 @@ interface NodeSystemError extends Error {
 async function testRealSSLErrors() {
     console.log('🧪 Testing Node.js SSL Error Structures...\n');
     
-    const client = new FetchClient({
-        debug: true,
-        sslErrorHandling: { enabled: false }, // Disable our handling to see raw errors
-        timeout: 5000
-    });
+    const client = new FetchClient({ debug: true, timeout: 5000 });
 
     const testCases = [
         {

@@ -7,7 +7,7 @@ import {
 } from '../src/index';
 
 async function quickTest() {
-  console.log('🧪 Testing Enhanced Fetch Client v2.0.0\n');
+  console.log('🧪 Testing Fetch Client Core (v3)\n');
 
   const client = new FetchClient({
     baseURL: 'https://jsonplaceholder.typicode.com',

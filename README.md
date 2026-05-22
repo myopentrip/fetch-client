@@ -243,7 +243,7 @@ await auth.logout();
 | `refreshTokens()` | Manual refresh |
 | `getAuthState()` / `setUser()` / `getUser()` | User + state |
 
-On **401**, if a refresh token exists, the plugin attempts refresh (does not require `expiresAt`). The original request is **not** auto-retried — call the endpoint again after refresh if needed.
+On **401**, if a refresh token exists, the plugin refreshes and **retries the original request once** (`retryAfterRefresh: true` by default). Set `retryAfterRefresh: false` to refresh only without retrying.
 
 ### Cookie utilities
 
@@ -420,7 +420,6 @@ pnpm run test:ssl
 pnpm run example:interceptors
 ```
 
-> Examples and tests under `examples/` and `tests/` may still use v2 patterns until migrated.
 
 ## License
 

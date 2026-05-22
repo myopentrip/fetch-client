@@ -144,7 +144,7 @@ await auth.logout();
 - `memory` storage — satu `Map` per instance plugin.
 - Header auth lewat `mergeHeaders()` — aman untuk `Headers` / array.
 
-**Tidak termasuk (sengaja):** retry request otomatis setelah refresh (caller bisa ulangi request; atau tambah di v3.1).
+**Retry setelah refresh:** pada 401, setelah refresh sukses, request asli dijalankan ulang sekali (`authRetried` di meta mencegah loop). Nonaktifkan dengan `retryAfterRefresh: false`.
 
 ### Upload (`@myopentrip/fetch-client/upload`)
 

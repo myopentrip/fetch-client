@@ -1,4 +1,9 @@
-import type { FetchClientLike, FetchResponse, FetchError } from '../../core/types';
+import type {
+    FetchClientLike,
+    FetchResponse,
+    FetchError,
+    ErrorInterceptorContext,
+} from '../../core/types';
 import type {
     AuthConfig,
     AuthTokens,
@@ -12,7 +17,7 @@ export class AuthPlugin {
     readonly name = 'auth';
 
     private authInterceptor: ReturnType<AuthManager['createAuthInterceptor']> | null = null;
-    private removeUnauthorizedInterceptor?: () => void;
+    private removeAuthErrorInterceptor?: () => void;
 
     private constructor(
         private readonly client: FetchClientLike,
@@ -34,15 +39,62 @@ export class AuthPlugin {
         }
 
         if (this.config.autoRefresh !== false) {
-            this.removeUnauthorizedInterceptor = this.client.addResponseInterceptor(async (response) => {
-                if (response.status !== 401 || response.meta.skipAuthRefresh) {
-                    return response;
-                }
-
-                await this.manager.handleUnauthorized(this.createRefreshRequestFn());
-                return response;
-            });
+            this.removeAuthErrorInterceptor = this.client.addErrorInterceptor((error, context) =>
+                this.handleUnauthorizedError(error, context)
+            );
         }
+    }
+
+    private async handleUnauthorizedError(
+        error: FetchError,
+        context?: ErrorInterceptorContext
+    ): Promise<FetchResponse | FetchError> {
+        if (error.status !== 401 || !context) {
+            return error;
+        }
+
+        const meta = context.config.meta;
+        if (meta?.skipAuthRefresh || meta?.authRetried) {
+            return error;
+        }
+
+        const refreshToken = this.manager.getTokens()?.refreshToken;
+        if (!refreshToken || !this.config.tokenRefreshUrl) {
+            await this.manager.handleUnauthorized(this.createRefreshRequestFn());
+            return error;
+        }
+
+        try {
+            await this.manager.refreshTokens(this.createRefreshRequestFn());
+        } catch {
+            return error;
+        }
+
+        if (!this.manager.isAuthenticated()) {
+            return error;
+        }
+
+        this.attachAuthInterceptor();
+
+        if (this.config.retryAfterRefresh === false) {
+            return error;
+        }
+
+        const retryResponse = await this.client.request(
+            context.method,
+            context.path,
+            {
+                ...context.config,
+                meta: {
+                    ...context.config.meta,
+                    path: context.path,
+                    method: context.method,
+                    authRetried: true,
+                },
+            }
+        );
+
+        return retryResponse;
     }
 
     async login<T = unknown>(credentials: LoginCredentials): Promise<FetchResponse<T>> {
@@ -121,8 +173,8 @@ export class AuthPlugin {
 
     teardown(): void {
         this.detachAuthInterceptor();
-        this.removeUnauthorizedInterceptor?.();
-        this.removeUnauthorizedInterceptor = undefined;
+        this.removeAuthErrorInterceptor?.();
+        this.removeAuthErrorInterceptor = undefined;
     }
 
     private attachAuthInterceptor(): void {

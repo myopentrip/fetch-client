@@ -10,7 +10,7 @@ import {
 } from '../src/index';
 
 async function testInterceptors() {
-    console.log('🔄 Testing Interceptor System');
+    console.log('🔄 Testing Interceptor System (v3 core)');
     console.log('============================\n');
 
     // Create a client for testing
