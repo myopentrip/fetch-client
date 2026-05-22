@@ -1,5 +1,26 @@
 # Recent Improvements ✨
 
+## v3.0.0
+
+### Breaking changes
+
+- **Core vs plugins:** `FetchClient` no longer accepts `auth` or `sslErrorHandling` in the constructor.
+- Auth: `import { createAuthPlugin } from '@myopentrip/fetch-client/auth'`
+- Upload: `import { createUploadPlugin } from '@myopentrip/fetch-client/upload'`
+- SSL: `await client.use(createSSLErrorPlugin())` from `@myopentrip/fetch-client/ssl`
+- `FetchResponse` now includes required `meta` (`path`, `method`).
+
+### Fixes (carried into v3)
+
+- Auth init is async via `await createAuthPlugin()` (no constructor race).
+- 401 + refresh token attempts refresh without requiring `expiresAt`.
+- `memory` storage uses a single Map per plugin instance.
+- Auth headers use `mergeHeaders()` (safe for `Headers` objects).
+- Error interceptors run once on final failure, not on every retry attempt.
+- Upload without progress uses the full `client.request()` pipeline.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## v2.7.0
 
 ### 🚀 Enhancements

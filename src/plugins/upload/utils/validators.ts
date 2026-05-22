@@ -1,4 +1,4 @@
-import { formatFileSize } from "./formatters";
+import { formatFileSize } from "../../../core/utils/formatters";
 
 export const validateFile = (
     file: File,

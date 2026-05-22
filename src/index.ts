@@ -1,15 +1,14 @@
-export { FetchClient } from './fetch-client';
-
-export { AuthManager } from './managers/auth-manager';
-export { UploadManager } from './managers/upload-manager';
-export { InterceptorManager } from './managers/interceptor-manager';
-export { RequestExecutor } from './managers/request-executor';
-export { RetryManager } from './managers/retry-manager';
+export { FetchClient } from './core/fetch-client';
+export { InterceptorManager } from './core/managers/interceptor-manager';
+export { RequestExecutor } from './core/managers/request-executor';
+export { RetryManager } from './core/managers/retry-manager';
 
 export type {
     FetchClientConfig,
-    SSLErrorHandlingConfig,
+    FetchClientLike,
+    FetchClientPlugin,
     RequestConfig,
+    RequestMeta,
     FetchResponse,
     FetchError,
     HttpMethod,
@@ -18,30 +17,31 @@ export type {
     ErrorInterceptor,
     Interceptors,
     RetryConfig,
-    FileUploadConfig,
-    FileUploadData,
-    MultipartFormData,
-    UploadProgressEvent,
-    AuthConfig,
-    AuthTokens,
-    AuthState,
-    LoginCredentials,
-    AuthEvents,
-    AuthStorageStrategy,
-    CookieOptions,
-} from './types';
+} from './core/types';
 
-import { FetchClient } from './fetch-client';
-import type { FetchClientConfig } from './types';
+export {
+    resolveURL,
+    prepareRequestBody,
+    normalizeHeaders,
+    mergeHeaders,
+    prepareRequestHeaders,
+} from './core/utils/request-helpers';
 
-export const createFetchClient = (config?: FetchClientConfig) => {
-    return new FetchClient(config);
-};
+export {
+    formatFileSize,
+    formatUploadSpeed,
+    formatTimeRemaining,
+    formatHTTPErrorMessage,
+    getHTTPStatusDescription,
+} from './core/utils/formatters';
 
-export * from './utils/interceptors';
-export * from './utils/formatters';
-export * from './utils/uploadCreators';
-export * from './utils/validators';
-export * from './utils/auth';
-export * from './utils/cookies';
-export * from './utils/ssl-error-handler';
+export {
+    createAuthInterceptor,
+    createLoggingInterceptor,
+    createTimingInterceptor,
+} from './core/utils/interceptors';
+
+import { FetchClient } from './core/fetch-client';
+import type { FetchClientConfig } from './core/types';
+
+export const createFetchClient = (config?: FetchClientConfig) => new FetchClient(config);

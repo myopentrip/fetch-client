@@ -1,7 +1,7 @@
 {
   "name": "@myopentrip/fetch-client",
-  "version": "2.8.0",
-  "description": "A reusable fetch client for modern JavaScript/TypeScript applications",
+  "version": "3.0.0",
+  "description": "A lightweight fetch wrapper with optional auth, upload, and SSL plugins",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -10,6 +10,21 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.mjs",
+      "require": "./dist/auth.js"
+    },
+    "./upload": {
+      "types": "./dist/upload.d.ts",
+      "import": "./dist/upload.mjs",
+      "require": "./dist/upload.js"
+    },
+    "./ssl": {
+      "types": "./dist/ssl.d.ts",
+      "import": "./dist/ssl.mjs",
+      "require": "./dist/ssl.js"
     }
   },
   "files": [

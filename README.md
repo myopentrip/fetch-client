@@ -2,6 +2,26 @@
 
 A reusable, TypeScript-first HTTP client built on top of the native Fetch API. Designed for modern JavaScript/TypeScript applications including Next.js projects.
 
+> **v3:** Core is intentionally small. Auth, upload, and SSL are optional plugins. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and migration from v2.
+
+### v3 quick start
+
+```typescript
+import { FetchClient } from '@myopentrip/fetch-client';
+import { createAuthPlugin } from '@myopentrip/fetch-client/auth';
+import { createUploadPlugin } from '@myopentrip/fetch-client/upload';
+import { createSSLErrorPlugin } from '@myopentrip/fetch-client/ssl';
+
+const client = new FetchClient({ baseURL: 'https://api.example.com', retries: 2 });
+await client.use(createSSLErrorPlugin());
+
+const auth = await createAuthPlugin(client, {
+  loginUrl: '/auth/login',
+  tokenRefreshUrl: '/auth/refresh',
+});
+const upload = createUploadPlugin(client);
+```
+
 ## Features
 
 - 🔥 **TypeScript-first** with full type safety

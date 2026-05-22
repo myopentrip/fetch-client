@@ -1,5 +1,5 @@
 // SSL/TLS Certificate Error Handling Utilities
-import type { FetchError } from '../types';
+import type { FetchError } from '../../core/types';
 
 /**
  * SSL/Certificate error types that can occur during HTTPS requests
