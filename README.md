@@ -1,10 +1,56 @@
 # Fetch Client
 
-A reusable, TypeScript-first HTTP client built on top of the native Fetch API. Designed for modern JavaScript/TypeScript applications including Next.js projects.
+A lightweight, TypeScript-first HTTP client on the native Fetch API — with optional plugins for auth, uploads, and SSL errors.
 
-> **v3:** Core is intentionally small. Auth, upload, and SSL are optional plugins. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and migration from v2.
+> **v3** splits a small **core** from optional **plugins**. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design and migration from v2.
 
-### v3 quick start
+## Features
+
+### Core (`@myopentrip/fetch-client`)
+
+- TypeScript-first with generics
+- GET, POST, PUT, PATCH, DELETE
+- Request timeout and `AbortSignal` cancellation
+- Retry with exponential backoff and jitter
+- Request, response, and error interceptors
+- Configurable base URL and default headers
+- ESM + CommonJS builds
+
+### Plugins (optional, tree-shakeable)
+
+| Plugin | Import | Provides |
+|--------|--------|----------|
+| Auth | `@myopentrip/fetch-client/auth` | Login, tokens, storage, 401 refresh |
+| Upload | `@myopentrip/fetch-client/upload` | Multipart upload, progress (XHR) |
+| SSL | `@myopentrip/fetch-client/ssl` | User-friendly certificate error messages |
+
+## Installation
+
+```bash
+pnpm add @myopentrip/fetch-client
+```
+
+Auth, upload, and SSL ship in the same package — import only what you need.
+
+## Quick start
+
+### Core only
+
+```typescript
+import { FetchClient } from '@myopentrip/fetch-client';
+
+const client = new FetchClient({
+  baseURL: 'https://api.example.com',
+  timeout: 10_000,
+  retries: 2,
+  headers: { Accept: 'application/json' },
+});
+
+const { data } = await client.get<User[]>('/users');
+await client.post('/users', { name: 'Ada' });
+```
+
+### With plugins
 
 ```typescript
 import { FetchClient } from '@myopentrip/fetch-client';
@@ -13,810 +59,326 @@ import { createUploadPlugin } from '@myopentrip/fetch-client/upload';
 import { createSSLErrorPlugin } from '@myopentrip/fetch-client/ssl';
 
 const client = new FetchClient({ baseURL: 'https://api.example.com', retries: 2 });
+
 await client.use(createSSLErrorPlugin());
 
 const auth = await createAuthPlugin(client, {
   loginUrl: '/auth/login',
   tokenRefreshUrl: '/auth/refresh',
+  storage: 'localStorage',
+  autoRefresh: true,
 });
+
+await auth.login({ email: 'user@example.com', password: 'secret' });
+const profile = await client.get('/user/profile');
+
 const upload = createUploadPlugin(client);
+await upload.uploadFile('/files', { file: document.querySelector('input').files[0] });
 ```
 
-## Features
+## Core usage
 
-- 🔥 **TypeScript-first** with full type safety
-- ⏹️ **Request Cancellation** with AbortController support
-- 🔄 **Smart Retry Logic** with exponential backoff and jitter
-- 🎯 **Full Interceptor System** for requests, responses, and errors
-- 🔒 **SSL/Certificate Error Handling** with user-friendly messages
-- 📁 **File Upload Support** with progress tracking and validation
-- 🔐 **Authentication Management** with automatic token refresh
-- ⏱️ **Request timeout** handling
-- 🔧 **Configurable** base URL and default headers
-- 📦 **Tree-shakeable** ESM and CommonJS builds
-- 🎯 **All HTTP methods** (GET, POST, PUT, DELETE, PATCH)
-- 🛠️ **Native Fetch API** (works in Node.js 18+ and all modern browsers)
-- 🐛 **Debug mode** with comprehensive logging
-- 🔐 **Built-in auth helpers** and common interceptors
-- 🧪 **Comprehensive test suite** with examples
-
-## Installation
-
-```bash
-pnpm add @myopentrip/fetch-client
-```
-
-## Quick Start
+### Configuration
 
 ```typescript
-import { FetchClient } from '@myopentrip/fetch-client';
-
-// Create a client instance
 const client = new FetchClient({
   baseURL: 'https://api.example.com',
-  timeout: 5000,
-  headers: {
-    'Authorization': 'Bearer your-token'
-  }
+  timeout: 10_000,           // default: 10000
+  headers: { 'X-App': 'web' },
+  retries: 3,                // default: 0
+  retryDelay: 1000,          // default: 1000
+  enableInterceptors: true,  // default: true
+  debug: false,
 });
-
-// Make requests
-const response = await client.get('/users');
-console.log(response.data);
 ```
 
-## Usage
-
-### Basic Usage
+### HTTP methods
 
 ```typescript
-import { FetchClient, createFetchClient } from '@myopentrip/fetch-client';
-
-// Option 1: Create with constructor
-const client = new FetchClient({
-  baseURL: 'https://jsonplaceholder.typicode.com'
-});
-
-// Option 2: Use factory function
-const client2 = createFetchClient({
-  baseURL: 'https://jsonplaceholder.typicode.com'
-});
-
-// GET request
-const users = await client.get('/users');
-
-// POST request
-const newUser = await client.post('/users', {
-  name: 'John Doe',
-  email: 'john@example.com'
-});
-
-// PUT request
-const updatedUser = await client.put('/users/1', {
-  name: 'Jane Doe',
-  email: 'jane@example.com'
-});
-
-// DELETE request
+await client.get('/users');
+await client.post('/users', { name: 'John' });
+await client.put('/users/1', { name: 'Jane' });
+await client.patch('/users/1', { active: true });
 await client.delete('/users/1');
+await client.request('GET', '/users', { timeout: 5000 });
 ```
 
-### Configuration Options
-
-```typescript
-const client = new FetchClient({
-  baseURL: 'https://api.example.com',  // Base URL for all requests
-  timeout: 10000,                      // Request timeout in milliseconds (default: 10000)
-  headers: {                           // Default headers for all requests
-    'Authorization': 'Bearer token',
-    'X-Custom-Header': 'value'
-  },
-  retries: 3,                          // Number of retry attempts (default: 0)
-  retryDelay: 1000,                    // Base delay between retries in ms (default: 1000)
-  enableInterceptors: true,            // Enable interceptor system (default: true)
-  debug: true                          // Enable debug logging (default: false)
-});
-```
-
-### Advanced Retry Configuration
+### Retry
 
 ```typescript
 client.updateRetryConfig({
   maxRetries: 3,
-  baseDelay: 1000,         // Starting delay
-  maxDelay: 30000,         // Maximum delay cap
-  backoffFactor: 2,        // Exponential backoff multiplier
-  jitter: true,            // Add randomness to prevent thundering herd
-  retryCondition: (error, attempt) => {
-    // Custom retry logic - retry on 5xx errors, not 4xx
-    return !error.status || (error.status >= 500 && error.status < 600);
-  }
+  baseDelay: 1000,
+  maxDelay: 30_000,
+  backoffFactor: 2,
+  jitter: true,
+  retryCondition: (error) =>
+    !error.status || (error.status >= 500 && error.status < 600),
 });
 ```
 
-### Request Cancellation
+Retry is configured globally via `retries` / `updateRetryConfig()` — not per-request.
+
+### Request cancellation
 
 ```typescript
-// Cancel requests using AbortController
 const controller = new AbortController();
-
-// Start the request
-const requestPromise = client.get('/users', {
-  signal: controller.signal
-});
-
-// Cancel after 5 seconds
+const promise = client.get('/users', { signal: controller.signal });
 setTimeout(() => controller.abort(), 5000);
-
-try {
-  const response = await requestPromise;
-} catch (error) {
-  if (error.name === 'AbortError') {
-    console.log('Request was cancelled');
-  }
-}
 ```
 
-### Interceptor System
+If you pass your own `signal`, the client will not apply its internal timeout abort — combine both manually if needed.
 
-All three types of interceptors are now working perfectly and integrate with the retry system.
+### Interceptors
 
 ```typescript
-// Request interceptors (modify outgoing requests)
-const removeAuthInterceptor = client.addRequestInterceptor(async (config) => {
-  const token = await getAuthToken();
-  config.headers = {
-    ...config.headers,
-    'Authorization': `Bearer ${token}`
-  };
-  return config;
-});
-
-// Response interceptors (modify incoming responses)
-const removeResponseInterceptor = client.addResponseInterceptor((response) => {
-  console.log(`Response received: ${response.status}`);
-  return response;
-});
-
-// Error interceptors (handle/transform errors)
-const removeErrorInterceptor = client.addErrorInterceptor((error) => {
-  console.error('Request failed:', error.message);
-  // Transform error, add context, send to monitoring, etc.
-  
-  // Add custom error categorization
-  if (!error.status) {
-    error.category = 'NETWORK_ERROR';
-  } else if (error.status >= 500) {
-    error.category = 'SERVER_ERROR';
-  }
-  
-  return error;
-});
-
-// Remove interceptors when no longer needed
-removeAuthInterceptor();
-removeResponseInterceptor();
-removeErrorInterceptor();
-```
-
-**Test the interceptor system:**
-```bash
-# Run comprehensive interceptor tests
-pnpm run test:interceptors
-
-# See real-world interceptor examples
-pnpm run example:interceptors
-```
-
-### Cookie-Based Authentication (Recommended for Production)
-
-```typescript
-import { 
-  FetchClient, 
-  createAuthConfig,
-  createCookieStorage,
-  createSecureCookieStorage,
-  createServerSideCookieStorage
-} from '@myopentrip/fetch-client';
-
-// Secure cookie authentication
-const client = new FetchClient({
-  baseURL: 'https://api.example.com',
-  auth: createAuthConfig({
-    storage: 'cookie',
-    loginUrl: '/auth/login',
-    tokenRefreshUrl: '/auth/refresh',
-    
-    cookieOptions: {
-      secure: true, // HTTPS only
-      httpOnly: false, // Note: httpOnly must be set server-side
-      sameSite: 'strict', // CSRF protection
-      maxAge: 8 * 60 * 60, // 8 hours
-      path: '/',
-      domain: '.yourdomain.com' // Allow subdomains
-    }
-  })
-});
-
-// For encrypted cookie storage
-const encryptedStorage = createSecureCookieStorage('your-secret-key');
-const secureClient = new FetchClient({
-  baseURL: 'https://api.example.com',
-  auth: createAuthConfig({
-    storage: 'custom',
-    customStorage: encryptedStorage
-  })
-});
-
-// Server-side cookie auth (Next.js)
-const serverStorage = createServerSideCookieStorage(
-  () => req.headers.cookie || '',
-  (name, value, options) => res.setHeader('Set-Cookie', `${name}=${value}; HttpOnly; Secure`),
-  (name) => res.setHeader('Set-Cookie', `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT`)
-);
-```
-
-### Cookie Utilities
-
-```typescript
-import { 
-  getCookie,
-  setCookie,
-  removeCookie,
-  parseCookies,
-  getAllCookies,
-  clearAllCookies,
-  areCookiesEnabled,
-  CookieSession
-} from '@myopentrip/fetch-client';
-
-// Get a specific cookie
-const authToken = getCookie('authToken');
-
-// Set a cookie with options
-setCookie('userPrefs', JSON.stringify({ theme: 'dark' }), {
-  secure: true,
-  sameSite: 'strict',
-  maxAge: 30 * 24 * 60 * 60 // 30 days
-});
-
-// Remove a cookie
-removeCookie('authToken');
-
-// Parse cookies from string
-const cookies = parseCookies(document.cookie);
-
-// Get all cookies as object
-const allCookies = getAllCookies();
-
-// Clear all cookies (limited effectiveness)
-clearAllCookies();
-
-// Check if cookies are enabled
-if (areCookiesEnabled()) {
-  console.log('Cookies are supported');
-}
-
-// Cookie-based session management
-const session = new CookieSession('userSession', {
-  secure: true,
-  maxAge: 8 * 60 * 60 // 8 hours
-});
-
-// Set session data
-session.set({ userId: 123, preferences: { theme: 'dark' } });
-
-// Get session data
-const sessionData = session.get();
-
-// Check if session exists
-if (session.exists()) {
-  console.log('Session found');
-}
-
-// Clear session
-session.clear();
-```
-
-### Storage Strategy Comparison
-
-| Storage Type | Security | Persistence | SSR Support | Auto-sent |
-|--------------|----------|-------------|-------------|-----------|
-| **Cookies** | ✅ httpOnly, Secure | ✅ Configurable | ✅ Yes | ✅ Automatic |
-| localStorage | ❌ XSS vulnerable | ✅ Permanent | ❌ No | ❌ Manual |
-| sessionStorage | ❌ XSS vulnerable | ⚠️ Tab session | ❌ No | ❌ Manual |
-| memory | ✅ Secure | ❌ Page session | ✅ Yes | ❌ Manual |
-
-**Recommendation: Use cookies for production apps** for better security and SSR compatibility.
-
-### Built-in Interceptor Helpers
-
-```typescript
-import { 
-  createAuthInterceptor, 
+import {
+  createAuthInterceptor,
   createLoggingInterceptor,
   createTimingInterceptor,
-  // SSL Error Handling
-  createSSLErrorInterceptor,
-  createDevelopmentSSLErrorInterceptor,
-  createProductionSSLErrorInterceptor,
-  isSSLError,
-  analyzeSSLError
 } from '@myopentrip/fetch-client';
 
-// Automatic auth token injection
-client.addRequestInterceptor(
+const removeAuth = client.addRequestInterceptor(
   createAuthInterceptor(() => localStorage.getItem('token'))
 );
 
-// Request/response logging
 client.addRequestInterceptor(createLoggingInterceptor(true));
 
-// Performance timing
 const timing = createTimingInterceptor();
 client.addRequestInterceptor(timing.request);
 client.addResponseInterceptor(timing.response);
 
-// SSL Error Handling (enabled by default)
-client.addErrorInterceptor(createSSLErrorInterceptor());
+client.addErrorInterceptor((error) => {
+  console.error(error.message);
+  return error;
+});
+
+removeAuth();
 ```
 
-### SSL/Certificate Error Handling
+Error interceptors run **once on final failure** (after retries are exhausted), not on every retry attempt.
 
-The package automatically transforms cryptic SSL errors into user-friendly messages:
-
-```typescript
-import { 
-  FetchClient,
-  createSSLErrorInterceptor,
-  createDevelopmentSSLErrorInterceptor,
-  createProductionSSLErrorInterceptor,
-  isSSLError,
-  analyzeSSLError
-} from '@myopentrip/fetch-client';
-
-// SSL error handling is ENABLED BY DEFAULT
-const client = new FetchClient({
-  baseURL: 'https://api.example.com'
-  // SSL errors are automatically transformed!
-});
-
-try {
-  await client.get('/secure-endpoint');
-} catch (error) {
-  // BEFORE: "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
-  // AFTER:  "SSL certificate verification failed. The server's certificate could not be verified."
-  
-  console.log(error.message); // User-friendly message
-  console.log(error.sslError.suggestions); // Actionable solutions
-}
-
-// Custom SSL error handling
-const customClient = new FetchClient({
-  baseURL: 'https://api.example.com',
-  sslErrorHandling: {
-    enabled: true,
-    includeTechnicalDetails: true, // Show details in development
-    includeSuggestions: true,      // Show helpful suggestions
-    customTransformer: (error) => {
-      // Send to monitoring service
-      monitoringService.reportSSLError(error);
-      return error;
-    }
-  }
-});
-
-// Development vs Production modes
-const devClient = new FetchClient({
-  baseURL: 'https://localhost:8443',
-  debug: true // Automatically shows technical details
-});
-
-const prodClient = new FetchClient({
-  baseURL: 'https://api.production.com',
-  sslErrorHandling: {
-    includeTechnicalDetails: false, // Hide technical details
-    includeSuggestions: false       // Hide suggestions from end users
-  }
-});
-
-// Manual SSL error analysis
-try {
-  await client.get('/api/data');
-} catch (error) {
-  if (isSSLError(error)) {
-    const analysis = analyzeSSLError(error);
-    console.log('Error type:', analysis.type);
-    console.log('User message:', analysis.userFriendlyMessage);
-    console.log('Retryable:', analysis.retryable);
-    console.log('Suggestions:', analysis.suggestions);
-  }
-}
-
-// Disable SSL error handling (get raw errors)
-const rawClient = new FetchClient({
-  baseURL: 'https://api.example.com',
-  sslErrorHandling: { enabled: false }
-});
-```
-
-**Test SSL error handling:**
-```bash
-# Run SSL error tests
-pnpm run test:ssl
-
-# See real-world SSL examples
-pnpm run example:ssl
-```
-
-### Authentication Management
-
-```typescript
-import { 
-  FetchClient, 
-  createAuthConfig,
-  createLoginCredentials,
-  getUserFromToken,
-  extractJWTPayload,
-  isTokenExpired,
-  formatTokenTimeRemaining
-} from '@myopentrip/fetch-client';
-
-// Create client with authentication
-const client = new FetchClient({
-  baseURL: 'https://api.example.com',
-  auth: createAuthConfig({
-    loginUrl: '/auth/login',
-    logoutUrl: '/auth/logout',
-    tokenRefreshUrl: '/auth/refresh',
-    storage: 'cookie', // 'localStorage', 'sessionStorage', 'memory', 'cookie', 'custom'
-    autoRefresh: true,
-    refreshThreshold: 300, // Refresh when token expires in 5 minutes
-    
-    // Cookie-specific options (when storage: 'cookie')
-    cookieOptions: {
-      secure: true, // HTTPS only
-      sameSite: 'strict', // CSRF protection
-      maxAge: 24 * 60 * 60, // 24 hours
-      path: '/'
-    },
-    
-    // Event handlers
-    onLoginSuccess: (tokens) => {
-      console.log('Login successful!');
-      const user = getUserFromToken(tokens.accessToken);
-      console.log('User:', user);
-    },
-    
-    onTokenRefresh: (tokens) => {
-      console.log('Token refreshed automatically');
-    },
-    
-    onTokenExpired: () => {
-      console.log('Please login again');
-      window.location.href = '/login';
-    }
-  })
-});
-
-// Login
-await client.login({
-  email: 'user@example.com',
-  password: 'password123'
-});
-
-// All subsequent requests automatically include auth token
-const userProfile = await client.get('/user/profile');
-const userSettings = await client.put('/user/settings', { theme: 'dark' });
-
-// Check authentication status
-if (client.isAuthenticated()) {
-  console.log('User is logged in');
-}
-
-// Manual token refresh
-if (client.isTokenExpired()) {
-  await client.refreshTokens();
-}
-
-// Logout
-await client.logout();
-
-// Get current user information
-const user = client.getUser();
-console.log('Current user:', user);
-
-// Set user information
-client.setUser({ id: 1, name: 'John Doe', email: 'john@example.com' });
-
-// Get authentication state
-const authState = client.getAuthState();
-console.log('Auth state:', authState);
-```
-
-### Advanced Authentication Utilities
-
-```typescript
-import { 
-  extractJWTPayload,
-  getUserFromToken,
-  isTokenExpired,
-  formatTokenTimeRemaining,
-  validateTokenStructure,
-  createSecureStorage,
-  AuthEventEmitter,
-  TokenRefreshQueue
-} from '@myopentrip/fetch-client';
-
-// Extract JWT payload without verification (client-side only)
-const payload = extractJWTPayload(token);
-console.log('Token payload:', payload);
-
-// Get user information from JWT token
-const user = getUserFromToken(token);
-console.log('User from token:', user);
-
-// Check if token is expired or will expire soon
-const isExpired = isTokenExpired(tokens, 300); // Check if expires in 5 minutes
-console.log('Token expired:', isExpired);
-
-// Format time until token expires
-const timeRemaining = formatTokenTimeRemaining(tokens);
-console.log('Time remaining:', timeRemaining);
-
-// Validate token structure
-const validation = validateTokenStructure(tokens);
-if (!validation.valid) {
-  console.error('Token validation errors:', validation.errors);
-}
-
-// Create secure storage with encryption
-const secureStorage = createSecureStorage('your-encryption-key');
-secureStorage.setItem('sensitiveData', 'encrypted-value');
-
-// Auth event emitter for handling auth state changes
-const authEvents = new AuthEventEmitter();
-const unsubscribe = authEvents.on('login', (tokens) => {
-  console.log('User logged in:', tokens);
-});
-
-// Token refresh queue to prevent concurrent refresh requests
-const refreshQueue = new TokenRefreshQueue();
-const tokens = await refreshQueue.startRefresh(async () => {
-  // Your refresh logic here
-  return await refreshTokens();
-});
-```
-
-### File Upload Support
-
-```typescript
-import { 
-  FetchClient, 
-  createFileUploadData, 
-  createProgressCallback,
-  validateFile, 
-  formatFileSize,
-  formatUploadSpeed,
-  formatTimeRemaining
-} from '@myopentrip/fetch-client';
-
-const client = new FetchClient({
-  baseURL: 'https://api.example.com'
-});
-
-// Simple file upload
-const file = document.getElementById('file-input').files[0];
-const response = await client.uploadFile('/api/upload', {
-  file,
-  fieldName: 'document',
-  additionalFields: {
-    description: 'User upload',
-    category: 'documents'
-  }
-});
-
-// Multiple files upload
-const files = Array.from(document.getElementById('files-input').files);
-await client.uploadFiles('/api/upload-multiple', files, {
-  fieldName: 'files[]'
-});
-
-// File upload with progress tracking
-await client.uploadFile('/api/upload', { file }, {
-  onProgress: (progress) => {
-    console.log(`${progress.percentage}% complete`);
-    console.log(`Speed: ${formatUploadSpeed(progress.speed)}`);
-    if (progress.estimatedTime) {
-      console.log(`Time remaining: ${formatTimeRemaining(progress.estimatedTime)}`);
-    }
-  },
-  onUploadStart: () => console.log('Upload started'),
-  onUploadComplete: () => console.log('Upload finished'),
-});
-
-// Using progress callback helper
-const progressCallback = createProgressCallback(
-  (percentage) => console.log(`Progress: ${percentage}%`),
-  (speed) => console.log(`Speed: ${formatUploadSpeed(speed)}`),
-  (timeRemaining) => console.log(`ETA: ${formatTimeRemaining(timeRemaining)}`)
-);
-
-await client.uploadFile('/api/upload', { file }, {
-  onProgress: progressCallback
-});
-
-// Complex form data with files and other fields
-await client.uploadFormData('/api/profile', {
-  // Files
-  avatar: avatarFile,
-  documents: [doc1, doc2],
-  
-  // Other fields
-  name: 'John Doe',
-  email: 'john@example.com',
-  age: 30
-});
-
-// File validation before upload
-const validation = validateFile(file, {
-  maxSize: 10 * 1024 * 1024, // 10MB
-  allowedTypes: ['image/jpeg', 'image/png'],
-  allowedExtensions: ['jpg', 'jpeg', 'png']
-});
-
-if (!validation.valid) {
-  console.error(validation.error);
-  return;
-}
-```
-
-### Per-Request Configuration
-
-```typescript
-// Override config for specific requests
-const response = await client.get('/users', {
-  timeout: 5000,
-  retries: 2,
-  signal: controller.signal,  // Request cancellation
-  headers: {
-    'X-Custom-Header': 'override-value'
-  }
-});
-```
-
-### Error Handling
+### Error handling
 
 ```typescript
 import type { FetchError } from '@myopentrip/fetch-client';
 
 try {
-  const response = await client.get('/users');
+  await client.get('/users');
 } catch (error) {
-  const fetchError = error as FetchError;
-  
-  if (fetchError.status) {
-    console.log(`HTTP Error: ${fetchError.status} ${fetchError.statusText}`);
+  const e = error as FetchError;
+  if (e.status) {
+    console.log(`HTTP ${e.status}: ${e.statusText}`);
   } else {
-    console.log(`Network Error: ${fetchError.message}`);
+    console.log(`Network: ${e.message}`);
   }
 }
 ```
 
-### TypeScript Support
-
-The client provides full TypeScript support with generic types:
+### TypeScript
 
 ```typescript
-interface User {
-  id: number;
-  name: string;
-  email: string;
-}
+interface User { id: number; name: string }
 
-// Typed responses
-const response = await client.get<User[]>('/users');
-const users: User[] = response.data;
-
-// Type-safe request bodies
-const newUser = await client.post<User>('/users', {
-  name: 'John Doe',
-  email: 'john@example.com'
-});
+const res = await client.get<User[]>('/users');
+const users: User[] = res.data;
+// res.meta.path, res.meta.method available on every response
 ```
 
-### Use in Next.js
-
-Perfect for Next.js API routes and client-side data fetching:
+### Next.js
 
 ```typescript
 // lib/api-client.ts
 import { createFetchClient } from '@myopentrip/fetch-client';
 
 export const apiClient = createFetchClient({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  baseURL: process.env.NEXT_PUBLIC_API_URL,
+});
+```
+
+---
+
+## Auth plugin
+
+```typescript
+import { FetchClient } from '@myopentrip/fetch-client';
+import {
+  createAuthPlugin,
+  createAuthConfig,
+  createLoginCredentials,
+  getUserFromToken,
+} from '@myopentrip/fetch-client/auth';
+
+const client = new FetchClient({ baseURL: 'https://api.example.com' });
+
+const auth = await createAuthPlugin(client, createAuthConfig({
+  loginUrl: '/auth/login',
+  logoutUrl: '/auth/logout',
+  tokenRefreshUrl: '/auth/refresh',
+  storage: 'cookie',
+  autoRefresh: true,
+  refreshThreshold: 300,
+  cookieOptions: { secure: true, sameSite: 'strict', maxAge: 8 * 60 * 60 },
+  onLoginSuccess: (tokens) => console.log(getUserFromToken(tokens.accessToken)),
+  onTokenExpired: () => { /* redirect to login */ },
+}));
+
+await auth.login(createLoginCredentials('user@example.com', 'password'));
+await client.get('/me'); // Authorization header added automatically
+
+if (auth.isAuthenticated()) {
+  await auth.refreshTokens();
+}
+await auth.logout();
+```
+
+### Auth API (`AuthPlugin`)
+
+| Method | Description |
+|--------|-------------|
+| `login(credentials)` | POST login, store tokens |
+| `logout()` | Clear tokens, optional logout URL |
+| `setTokens` / `getTokens` / `clearTokens` | Token lifecycle |
+| `isAuthenticated()` / `isTokenExpired()` | State checks |
+| `refreshTokens()` | Manual refresh |
+| `getAuthState()` / `setUser()` / `getUser()` | User + state |
+
+On **401**, if a refresh token exists, the plugin attempts refresh (does not require `expiresAt`). The original request is **not** auto-retried — call the endpoint again after refresh if needed.
+
+### Cookie utilities
+
+Imported from `@myopentrip/fetch-client/auth`:
+
+```typescript
+import {
+  getCookie,
+  setCookie,
+  removeCookie,
+  parseCookies,
+  createCookieStorage,
+  CookieSession,
+} from '@myopentrip/fetch-client/auth';
+```
+
+### Storage comparison
+
+| Storage | Security | Persistence | SSR | Sent automatically |
+|---------|----------|-------------|-----|-------------------|
+| cookie | Best with `httpOnly` (server-set) | Configurable | Yes | Yes |
+| localStorage | XSS risk | Permanent | No | No |
+| sessionStorage | XSS risk | Tab session | No | No |
+| memory | In-memory only | Page session | Yes | No |
+
+---
+
+## Upload plugin
+
+```typescript
+import { FetchClient } from '@myopentrip/fetch-client';
+import {
+  createUploadPlugin,
+  createFileUploadData,
+  createProgressCallback,
+  validateFile,
+} from '@myopentrip/fetch-client/upload';
+import { formatUploadSpeed, formatTimeRemaining } from '@myopentrip/fetch-client';
+
+const client = new FetchClient({ baseURL: 'https://api.example.com' });
+const upload = createUploadPlugin(client);
+
+const file = input.files[0];
+
+await upload.uploadFile('/upload', createFileUploadData(file, {
+  fieldName: 'document',
+  additionalFields: { category: 'docs' },
+}));
+
+await upload.uploadFiles('/upload-many', Array.from(input.files));
+
+await upload.uploadFormData('/profile', {
+  avatar: avatarFile,
+  name: 'John',
+  age: 30,
 });
 
-// pages/api/users.ts or app/api/users/route.ts
-import { apiClient } from '../../lib/api-client';
+// With progress (uses XMLHttpRequest — no retry/interceptors on this path)
+await upload.uploadFile('/upload', { file }, {
+  onProgress: createProgressCallback(
+    (pct) => console.log(`${pct}%`),
+    (speed) => console.log(formatUploadSpeed(speed)),
+    (eta) => console.log(formatTimeRemaining(eta)),
+  ),
+});
 
-export async function GET() {
-  try {
-    const response = await apiClient.get('/external-api/users');
-    return Response.json(response.data);
-  } catch (error) {
-    return Response.json({ error: 'Failed to fetch users' }, { status: 500 });
+const check = validateFile(file, {
+  maxSize: 10 * 1024 * 1024,
+  allowedTypes: ['image/jpeg', 'image/png'],
+});
+```
+
+Without `onProgress`, uploads go through `client.request()` (interceptors + retry apply).
+
+---
+
+## SSL plugin
+
+SSL handling is **opt-in** in v3:
+
+```typescript
+import { FetchClient } from '@myopentrip/fetch-client';
+import {
+  createSSLErrorPlugin,
+  isSSLError,
+  analyzeSSLError,
+} from '@myopentrip/fetch-client/ssl';
+
+const client = new FetchClient({ baseURL: 'https://api.example.com' });
+
+await client.use(createSSLErrorPlugin({
+  includeSuggestions: true,
+  includeTechnicalDetails: false,
+}));
+
+try {
+  await client.get('/secure');
+} catch (error) {
+  if (isSSLError(error)) {
+    console.log(analyzeSSLError(error).suggestions);
   }
 }
 ```
 
-## API Reference
+Or register the interceptor directly:
 
-### Constructor
+```typescript
+import { createSSLErrorInterceptor } from '@myopentrip/fetch-client/ssl';
+
+client.addErrorInterceptor(createSSLErrorInterceptor({}, true));
+```
+
+---
+
+## Migration from v2
+
+| v2 | v3 |
+|----|-----|
+| `new FetchClient({ auth })` | `await createAuthPlugin(client, config)` |
+| `client.login()` / `client.uploadFile()` | `auth.login()` / `upload.uploadFile()` |
+| `sslErrorHandling` in constructor | `await client.use(createSSLErrorPlugin())` |
+| Cookie helpers from main entry | `@myopentrip/fetch-client/auth` |
+| `RequestConfig.retries` | `client.updateRetryConfig()` only |
+| `FetchResponse` without `meta` | `meta: { path, method }` required |
+
+Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## API reference (core)
+
+### `FetchClient`
 
 ```typescript
 new FetchClient(config?: FetchClientConfig)
-```
-
-### HTTP Methods
-
-- `get<T>(path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
-- `post<T>(path: string, data?: unknown, config?: RequestConfig): Promise<FetchResponse<T>>`
-- `put<T>(path: string, data?: unknown, config?: RequestConfig): Promise<FetchResponse<T>>`
-- `patch<T>(path: string, data?: unknown, config?: RequestConfig): Promise<FetchResponse<T>>`
-- `delete<T>(path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
-- `request<T>(method: HttpMethod, path: string, config?: RequestConfig): Promise<FetchResponse<T>>`
-
-### Authentication Methods
-
-- `login<T>(credentials: LoginCredentials): Promise<FetchResponse<T>>`
-- `logout(): Promise<void>`
-- `setTokens(tokens: AuthTokens): Promise<void>`
-- `getTokens(): AuthTokens | null`
-- `clearTokens(): Promise<void>`
-- `isAuthenticated(): boolean`
-- `isTokenExpired(threshold?: number): boolean`
-- `refreshTokens(): Promise<AuthTokens>`
-- `getAuthState(): AuthState`
-- `setUser(user: any): void`
-- `getUser(): any`
-
-### File Upload Methods
-
-- `uploadFile<T>(path: string, fileData: FileUploadData, config?: FileUploadConfig): Promise<FetchResponse<T>>`
-- `uploadFiles<T>(path: string, files: File[], config?: FileUploadConfig): Promise<FetchResponse<T>>`
-- `uploadFormData<T>(path: string, formData: FormData | MultipartFormData, config?: FileUploadConfig): Promise<FetchResponse<T>>`
-
-### Interceptor Methods
-
-- `addRequestInterceptor(interceptor: RequestInterceptor): () => void`
-- `addResponseInterceptor(interceptor: ResponseInterceptor): () => void`
-- `addErrorInterceptor(interceptor: ErrorInterceptor): () => void`
-- `updateRetryConfig(config: Partial<RetryConfig>): void`
-
-### SSL Error Handling Methods
-
-- `isSSLError(error: FetchError): boolean` - Detect SSL/certificate errors
-- `analyzeSSLError(error: FetchError): SSLErrorInfo` - Get detailed SSL error analysis
-- `transformSSLError(error: FetchError, config?: SSLErrorConfig): FetchError` - Transform SSL errors
-- `shouldRetrySSLError(error: FetchError): boolean` - Check if SSL error is retryable
-- `getSSLErrorSuggestions(error: FetchError): string[]` - Get actionable suggestions
-- `createSSLErrorInterceptor(config?: SSLErrorConfig): ErrorInterceptor` - Create SSL error interceptor
-- `createDevelopmentSSLErrorInterceptor(): ErrorInterceptor` - Development-friendly SSL interceptor
-- `createProductionSSLErrorInterceptor(): ErrorInterceptor` - Production-safe SSL interceptor
-
-### Types
-
-```typescript
-interface FetchResponse<T> {
-  data: T;
-  status: number;
-  statusText: string;
-  headers: Headers;
-}
 
 interface FetchClientConfig {
   baseURL?: string;
@@ -826,135 +388,39 @@ interface FetchClientConfig {
   retryDelay?: number;
   enableInterceptors?: boolean;
   debug?: boolean;
-  auth?: AuthConfig;
-  sslErrorHandling?: SSLErrorHandlingConfig;
 }
 
-interface SSLErrorHandlingConfig {
-  enabled?: boolean; // Default: true
-  includeTechnicalDetails?: boolean; // Default: false (true in debug mode)
-  includeSuggestions?: boolean; // Default: true
-  customTransformer?: (error: FetchError) => FetchError;
-}
-
-interface AuthConfig {
-  tokenKey?: string;
-  refreshTokenKey?: string;
-  storage?: 'localStorage' | 'sessionStorage' | 'memory' | 'cookie' | 'custom';
-  cookieOptions?: CookieOptions;
-  customStorage?: {
-    getItem: (key: string) => string | null | Promise<string | null>;
-    setItem: (key: string, value: string) => void | Promise<void>;
-    removeItem: (key: string) => void | Promise<void>;
-  };
-  tokenRefreshUrl?: string;
-  loginUrl?: string;
-  logoutUrl?: string;
-  tokenPrefix?: string;
-  autoRefresh?: boolean;
-  refreshThreshold?: number;
-  onTokenRefresh?: (tokens: AuthTokens) => void | Promise<void>;
-  onTokenExpired?: () => void | Promise<void>;
-  onLoginSuccess?: (tokens: AuthTokens) => void | Promise<void>;
-  onLogout?: () => void | Promise<void>;
-  onAuthError?: (error: FetchError) => void | Promise<void>;
-}
-
-interface AuthTokens {
-  accessToken: string;
-  refreshToken?: string;
-  expiresIn?: number;
-  expiresAt?: number;
-  tokenType?: string;
-}
-
-interface LoginCredentials {
-  username?: string;
-  email?: string;
-  password: string;
-  [key: string]: any;
-}
-
-interface AuthState {
-  isAuthenticated: boolean;
-  tokens: AuthTokens | null;
-  user?: any;
-  isRefreshing: boolean;
-  lastRefresh?: number;
-}
-
-interface FileUploadConfig extends Omit<RequestConfig, 'body'> {
-  onProgress?: (progress: UploadProgressEvent) => void;
-  onUploadStart?: () => void;
-  onUploadComplete?: () => void;
-  onUploadError?: (error: Error) => void;
-  chunkSize?: number;
-}
-
-interface UploadProgressEvent {
-  loaded: number;
-  total: number;
-  percentage: number;
-  speed?: number;
-  estimatedTime?: number;
-}
-
-interface FileUploadData {
-  file: File | File[];
-  fieldName?: string;
-  additionalFields?: Record<string, string | number | boolean>;
-  fileName?: string;
-}
-
-interface CookieOptions {
-  domain?: string;
-  path?: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  sameSite?: 'strict' | 'lax' | 'none';
-  maxAge?: number;
-  expires?: Date;
-}
-
-interface RetryConfig {
-  maxRetries: number;
-  baseDelay: number;
-  maxDelay: number;
-  backoffFactor: number;
-  jitter: boolean;
-  retryCondition?: (error: FetchError, attempt: number) => boolean;
-}
-
-interface SSLErrorInfo {
-  type: 'certificate' | 'network' | 'timeout' | 'unknown';
-  originalError: string;
-  userFriendlyMessage: string;
-  technicalDetails: string;
-  suggestions: string[];
-  retryable: boolean;
+interface FetchResponse<T> {
+  data: T;
+  status: number;
+  statusText: string;
+  headers: Headers;
+  meta: { path: string; method: HttpMethod; skipAuthRefresh?: boolean };
 }
 ```
 
-## Testing and Examples
+### Methods
 
-The package includes comprehensive tests and real-world examples:
+- `get`, `post`, `put`, `patch`, `delete`, `request`
+- `use(plugin)` — register a `FetchClientPlugin` (e.g. SSL)
+- `addRequestInterceptor`, `addResponseInterceptor`, `addErrorInterceptor`
+- `removeRequestInterceptor`
+- `updateRetryConfig`
+- `getDefaultHeaders()`, `buildHeaders()`, `resolveURL()`
+- `rawPost()` — internal POST without interceptors/retry (used by auth refresh)
+
+Plugin APIs are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Scripts
 
 ```bash
-# Test the interceptor system
-pnpm run test:interceptors
-
-# Test SSL error handling
-pnpm run test:ssl
-
-# See interceptor examples
-pnpm run example:interceptors
-
-# See SSL error handling examples
-pnpm run example:ssl
-
-# Build the package
 pnpm run build
+pnpm run test:interceptors
+pnpm run test:ssl
+pnpm run example:interceptors
 ```
+
+> Examples and tests under `examples/` and `tests/` may still use v2 patterns until migrated.
 
 ## License
 
