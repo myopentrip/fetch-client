@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [3.2.0] - 2026-05-23
+
 ### Added
 
 - **`createAppClient`** — factory that creates `FetchClient` and wires SSL → auth → upload in the recommended order (sugar only, no new HTTP behavior). Exported from `@myopentrip/fetch-client` (lazy-loaded chunks) and `@myopentrip/fetch-client/app` (static).
